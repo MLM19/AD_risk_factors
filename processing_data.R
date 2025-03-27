@@ -1,4 +1,4 @@
-#Processing code up to creating table that relates how significant SNPs are between traits
+#Processing code: merging, then filtering out those SNPs that are too close. 
 
 #0. Load libraries
 library(dplyr)
@@ -99,30 +99,73 @@ save_result_table <- function(result_table, file_name) {
   message("Result table saved as: ", file_path)
 }
 
-##3. Main Script ##
+##3. Filter by distance
+filter_snps_by_distance <- function(snp_data, distance_threshold = 200000) {
+  message("Filtering SNPs by distance...")
+  
+  # Order SNPs by p_value
+  ordered_snps <- snp_data %>%
+    arrange(p_value)
+  
+  filtered_snps <- data.frame()
+  markers <- data.frame()
+  
+  for (i in 1:nrow(ordered_snps)) {
+    current_snp <- ordered_snps[i, ]
+    
+    # Check distance from all existing markers
+    if (nrow(markers) == 0 || all(
+      (markers$chr != current_snp$chr) |
+      (abs(markers$pos - current_snp$pos) > distance_threshold)
+    )) {
+      # If far enough from all markers, keep the SNP and add it as a new marker
+      filtered_snps <- rbind(filtered_snps, current_snp)
+      markers <- rbind(markers, current_snp[, c("chr", "pos")])
+    }
+  }
+  
+  message("Filtering complete. Kept ", nrow(filtered_snps), " out of ", nrow(snp_data), " SNPs.")
+  return(filtered_snps)
+}
 
-##1. Load the files
-snp_sig_trait1_file <- "preprocessed_data/AD_7158_snp_significant.tsv"
-effect_data_trait2_file <- "preprocessed_data/ALCOH_3727_effect_snp_clean.tsv"
-clean_data_trait2_file <- "preprocessed_data/ALCOH_3727_snp_clean.tsv"
 
-snp_significant <- fread(snp_sig_trait1_file, sep = "\t")
-effect_data_trait2 <- fread(effect_data_trait2_file, sep = "\t")
-clean_data_trait2 <- fread(clean_data_trait2_file, sep = "\t")
+##4. Main Script ##
 
-##2. Run the analysis
-result_table <- find_significant_snps(snp_significant, clean_data_trait2)
+process_snp_data <- function(snp_sig_trait1_file, effect_data_trait2_file, clean_data_trait2_file, distance_threshold, file_name) {
+  
+  message("Loading data...")   #marker
+  snp_significant <- fread(snp_sig_trait1_file, sep = "\t")
+  effect_data_trait2 <- fread(effect_data_trait2_file, sep = "\t")
+  clean_data_trait2 <- fread(clean_data_trait2_file, sep = "\t")
+  
+  #Merging
+  result_table <- find_significant_snps(snp_significant, clean_data_trait2)
+  
+  #Finding significance
+  result_table <- test_significance(result_table, effect_data_trait2)
+  
+  #Filtering SNPs that are too close to the most significant ones
+  filtered_result_table <- filter_snps_by_distance(result_table, distance_threshold)
+  
+  #Print the results
+  print(filtered_result_table)
+  significance_freq <- table(filtered_result_table$significance_level)
+  significance_df <- as.data.frame(significance_freq)
+  colnames(significance_df) <- c("Significance Level", "Frequency")
+  print(significance_df)
+  
+  #Save result in the directory
+  save_result_table(filtered_result_table, file_name)
+  
+  return(NULL)
+}
 
-##3. Assess significance
-result_table <- test_significance(result_table, effect_data_trait2)
 
-##4. Print the results
-print(result_table)
-significance_freq <- table(result_table$significance_level)
-significance_df <- as.data.frame(significance_freq)
-colnames(significance_df) <- c("Significance Level", "Frequency")
-print(significance_df)
+#Usage:
+snp_sig_trait1_file <- "preprocessed_data/ALCOH_3727_snp_significant.tsv"
+effect_data_trait2_file <- "preprocessed_data/VITD_5742_effect_snp_clean.tsv"
+clean_data_trait2_file <- "preprocessed_data/VITD_5742_snp_clean.tsv"
+distance_threshold = 200000
+file_name <- "ALCOH1_VITD2"
 
-##5. Save result in the directory
-file_name <- "AD1_ALCOH2"
-save_result_table(result_table, file_name)
+process_snp_data(snp_sig_trait1_file, effect_data_trait2_file, clean_data_trait2_file, distance_threshold, file_name)
