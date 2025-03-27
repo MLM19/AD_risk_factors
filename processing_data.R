@@ -1,171 +1,166 @@
-#Processing code: merging, then filtering out those SNPs that are too close. 
+#processing code: automatic merging + snp enrichment, this results are not good
 
 #0. Load libraries
 library(dplyr)
+library(tibble)
 library(data.table)
 
-#1. Find significant SNPs
-find_significant_snps <- function(sig_data_trait1, clean_data_trait2) {
-  message("Starting search for significant SNPs in another trait's data...")
+#1. Merging: Function to find significant SNPs in trait1 and martch with trait2
+tidy_snps <- function(sig_trait1_file, effect_clean_trait2_file, clean_trait2_file) {
+  message("Loading data files...")
+  sig_trait1 <- as_tibble(fread(sig_trait1_file))
+  effect_trait2 <- as_tibble(fread(effect_clean_trait2_file))
+  clean_trait2 <- as_tibble(fread(clean_trait2_file))
   
-  sig_data_trait1 <- sig_data_trait1 %>%
-    mutate(chr = as.character(chr),
-           pos = as.numeric(pos),
-           rs_id = as.character(rs_id)) %>%
-    distinct(chr, pos, .keep_all = TRUE)
+  message("Checking column names for debugging:")
+  print(colnames(sig_trait1))
+  print(colnames(effect_trait2))
+  print(colnames(clean_trait2))
   
-  clean_data_trait2 <- clean_data_trait2 %>%
-    mutate(chr = as.character(chr),
-           pos = as.numeric(pos),
-           rs_id = as.character(rs_id)) %>%
-    distinct(chr, pos, effect_allele, alt_allele, .keep_all = TRUE)
-  
-  message("Number of unique significant SNPs from trait 1: ", nrow(sig_data_trait1))
-  message("Dimension of clean data from trait 2:", paste(dim(clean_data_trait2), collapse = " x "))
-  
-  found_snps <- clean_data_trait2 %>%
-    inner_join(sig_data_trait1 %>% select(chr, pos, rs_id), by = c("chr", "pos"))
-  
-  message("Initial number of SNPs found in trait 2 based on position and chromosome: ", nrow(found_snps))
-  message("Columns in found_snps: ", paste(colnames(found_snps), collapse = ", "))
-  
-  # Decide which rs_id to keep
-  final_table <- found_snps %>%
+  message("Merging the significant SNPs from trait1 to trait2...")
+  merged_data <- sig_trait1 %>%
+    inner_join(effect_trait2, by = c("chr", "pos")) %>%
+    inner_join(clean_trait2, by = c("chr", "pos"), suffix = c("_sig", "_clean")) %>%
     mutate(
-      final_rs_id = ifelse(rs_id.x == rs_id.y, rs_id.x, 
-                           ifelse(nrow(sig_data_trait1) > nrow(clean_data_trait2), rs_id.x, rs_id.y))
+      final_rs_id = coalesce(rs_id.x, rs_id.y, rs_id),
+      effect_allele = coalesce(effect_allele_sig, effect_allele_clean),  
+      alt_allele = coalesce(alt_allele_sig, alt_allele_clean)
     ) %>%
-    select(chr, pos, effect_allele, alt_allele, final_rs_id)
+    dplyr::select(chr, pos, effect_allele, alt_allele, final_rs_id, p_value, beta, SE)
   
-  message("Number of SNPs after processing: ", nrow(final_table))
-  message("Columns in final_table: ", paste(colnames(final_table), collapse = ", "))
-  message("Search complete.")
-  return(final_table)
+  message("Number of merged SNPs: ", nrow(merged_data))
+  return(merged_data)
 }
 
-
 #2. Test significance function
-test_significance <- function(result_table, effect_data_trait2, significance_threshold = 10e-5) {
+test_significance <- function(data, significance_threshold = 1e-5) {
   message("Assessing significance of SNPs in trait 2...")
-  
-  if (nrow(result_table) == 0) {
-    message("No SNPs to assess for significance.")
-    return(result_table)
-  }
-  
-  effect_data_trait2 <- effect_data_trait2 %>%
-    mutate(chr = as.character(chr),
-           pos = as.numeric(pos),
-           rs_id = as.character(rs_id))
-  
-  message("Number of significant SNPs in trait 2: ", sum(effect_data_trait2$p_value < significance_threshold))
-  
-  merged_data <- result_table %>%
-    left_join(effect_data_trait2 %>%
-                select(chr, pos, p_value, beta, SE, rs_id),
-              by = c("chr", "pos"))
-  
-  if (nrow(merged_data) == 0) {
-    warning("No overlapping SNPs between traits.")
-    return(merged_data)
-  }
-  
-  merged_result <- merged_data %>%
+  data %>%
     mutate(
       significance_level = case_when(
+        is.na(p_value) ~ "Unknown",
         p_value < significance_threshold ~ "Significant",
         p_value < 0.05 ~ "Potentially Significant",
         TRUE ~ "Not Significant"
       )
-    ) %>%
-    select(chr, pos, effect_allele, alt_allele, final_rs_id, p_value, beta, SE, significance_level)
-  
-  message("Significance assessment complete.")
-  return(merged_result)
-}
-
-
-##Function to save the results
-save_result_table <- function(result_table, file_name) {
-  #Create the processed_data directory if it doesn't exist
-  dir.create("processed_data", showWarnings = FALSE)
-  
-  # Create the full file path
-  file_path <- paste0("processed_data/", file_name, "_merged_table.tsv")
-  
-  # Save the result table
-  fwrite(result_table, file_path, sep = "\t")
-  
-  message("Result table saved as: ", file_path)
+    )
 }
 
 ##3. Filter by distance
-filter_snps_by_distance <- function(snp_data, distance_threshold = 200000) {
-  message("Filtering SNPs by distance...")
+#filter SNPs based on the minimum distance threshold
+filter_snps_by_distance <- function(data, min_distance = 200000) {
+  #Sorting by p_value from lowest to highest, then chr and position
+  data <- data %>% arrange(p_value, chr, pos)
   
-  # Order SNPs by p_value
-  ordered_snps <- snp_data %>%
-    arrange(p_value)
+  #Initialize filtered list
+  filtered_snps <- list()
+  prev_pos <- -Inf #to ensure that the first SNP is also counted in the process.
   
-  filtered_snps <- data.frame()
-  markers <- data.frame()
+  message("Filtering SNPs to find those that are further than: ", min_distance, " base pairs.") #marker
   
-  for (i in 1:nrow(ordered_snps)) {
-    current_snp <- ordered_snps[i, ]
-    
-    # Check distance from all existing markers
-    if (nrow(markers) == 0 || all(
-      (markers$chr != current_snp$chr) |
-      (abs(markers$pos - current_snp$pos) > distance_threshold)
-    )) {
-      # If far enough from all markers, keep the SNP and add it as a new marker
-      filtered_snps <- rbind(filtered_snps, current_snp)
-      markers <- rbind(markers, current_snp[, c("chr", "pos")])
+  #Go through the data and keep as signal those SNPs that are further away from minimal distance (using list to filter)
+  for (i in seq_len(nrow(data))) {
+    if (data$pos[i] - prev_pos >= min_distance) {
+      filtered_snps <- append(filtered_snps, list(data[i, ]))
+      prev_pos <- data$pos[i]
     }
   }
   
-  message("Filtering complete. Kept ", nrow(filtered_snps), " out of ", nrow(snp_data), " SNPs.")
-  return(filtered_snps)
+  #Convert list into dataframe 
+  return(bind_rows(filtered_snps))
 }
 
+#4. Calculate enrichment: probability of SNPs being significant by chance and compare it to the observed probability
+calculate_snp_enrichment <- function(filtered_result_table, all_snps_file, num_simulations = 1000, pval_threshold = 1e-5) {
+  #Load all SNPs dataset as a background file
+  all_snps_data <- fread(all_snps_file,  sep = "\t")
+  
+  #Filter out NA values for p_value calculations (there should be none)
+  filtered_result_table <- filtered_result_table %>% filter(!is.na(p_value))
+  all_snps_data <- all_snps_data %>% filter(!is.na(p_value))
+  
+  #Calculate observed probability of significance
+  observed_significant_count <- sum(filtered_result_table$p_value < pval_threshold, na.rm = TRUE)
+  observed_prob <- observed_significant_count / nrow(filtered_result_table)
+  message("The number of observed significant SNPs is ", observed_significant_count)
 
-##4. Main Script ##
-
-process_snp_data <- function(snp_sig_trait1_file, effect_data_trait2_file, clean_data_trait2_file, distance_threshold, file_name) {
   
-  message("Loading data...")   #marker
-  snp_significant <- fread(snp_sig_trait1_file, sep = "\t")
-  effect_data_trait2 <- fread(effect_data_trait2_file, sep = "\t")
-  clean_data_trait2 <- fread(clean_data_trait2_file, sep = "\t")
+  #Simulate random selection of SNPs to compute expected probability
+  simulated_probs <- replicate(num_simulations, {         #replicate: store output of each iteration in a vector
+    random_snps <- all_snps_data %>% sample_n(min(nrow(filtered_result_table), nrow(all_snps_data)), replace = FALSE)  #random sampling of SNPs to simulate a null distribution
+    sum(random_snps$p_value < pval_threshold, na.rm = TRUE) / nrow(random_snps)  #compute proportion of randomly selected SNPs that meet significance threshold
+  })
   
-  #Merging
-  result_table <- find_significant_snps(snp_significant, clean_data_trait2)
+  #Compute expected probability
+  mean_simulated_prob <- mean(na.omit(simulated_probs))
   
-  #Finding significance
-  result_table <- test_significance(result_table, effect_data_trait2)
+  #Calculate enrichment statistics
+  enrichment_fold <- ifelse(mean_simulated_prob == 0, NA, observed_prob / mean_simulated_prob)
+  z_score <- (observed_prob - mean_simulated_prob) / sd(na.omit(simulated_probs))
+  p_value <- pnorm(-abs(z_score)) * 2
   
-  #Filtering SNPs that are too close to the most significant ones
+  #Convert enrichment results into a data frame
+  enrichment_results_df <- data.frame(
+    observed_probability = observed_prob,
+    expected_probability = mean_simulated_prob,
+    enrichment_fold = enrichment_fold,
+    z_score = z_score,
+    p_value = p_value
+  )
+  
+  print(enrichment_results_df)
+  return(enrichment_results_df)
+}
+  
+##5. Main function
+process_SNPs <- function(sig_trait1_file, clean_trait2_file, effect_clean_trait2_file, distance_threshold, file_name){
+  #Make sure that the directory exists, otherwise create it 
+  dir.create("processed_data", showWarnings = FALSE)
+  
+  #Find significant SNPs in trait 2 based on trait 1
+  result_table <- tidy_snps(sig_trait1_file, effect_clean_trait2_file, clean_trait2_file)
+  
+  #Assess significance of found SNPs in trait 2
+  result_table <- test_significance(result_table, effect_clean_trait2_file)
+  
+  #Filter SNPs based on proximity to the most significant ones
   filtered_result_table <- filter_snps_by_distance(result_table, distance_threshold)
   
-  #Print the results
-  print(filtered_result_table)
-  significance_freq <- table(filtered_result_table$significance_level)
-  significance_df <- as.data.frame(significance_freq)
-  colnames(significance_df) <- c("Significance Level", "Frequency")
-  print(significance_df)
+  message("Number of SNPs after filtering: ", nrow(filtered_result_table))
   
-  #Save result in the directory
-  save_result_table(filtered_result_table, file_name)
+  #Save filtered results to a dynamically named file
+  filtered_output_path <- paste0("processed_data/", file_name, "_filtered_snps.tsv")
+  fwrite(filtered_result_table, filtered_output_path, sep = "\t")
   
-  return(NULL)
+  message("Filtered SNPs saved to: ", filtered_output_path)
+  
+  #Perform enrichment analysis
+  enrichment_results <- calculate_snp_enrichment(
+    filtered_result_table,
+    all_snps_file = effect_clean_trait2_file, 
+    num_simulations = 10000
+  )
+  
+  # Convert enrichment results to a dataframe for saving
+  enrichment_results_df <- as.data.frame(t(enrichment_results))
+  colnames(enrichment_results_df) <- c("Value")
+  
+  # Save enrichment results to a dynamically named file
+  enrichment_output_path <- paste0("processed_data/", file_name, "_enriched_table.tsv")
+  fwrite(enrichment_results_df, enrichment_output_path, sep = "\t")
+  
+  message("Enrichment results saved to: ", enrichment_output_path)
 }
 
 
-#Usage:
-snp_sig_trait1_file <- "preprocessed_data/ALCOH_3727_snp_significant.tsv"
-effect_data_trait2_file <- "preprocessed_data/VITD_5742_effect_snp_clean.tsv"
-clean_data_trait2_file <- "preprocessed_data/VITD_5742_snp_clean.tsv"
-distance_threshold = 200000
-file_name <- "ALCOH1_VITD2"
+##6. Main Script Execution ##
 
-process_snp_data(snp_sig_trait1_file, effect_data_trait2_file, clean_data_trait2_file, distance_threshold, file_name)
+#Define parameters and call processing function
+process_SNPs(
+  sig_trait1_file <- "preprocessed_data/AD_7158_snp_significant.tsv",
+  clean_trait2_file <- "preprocessed_data/COVID_0403_snp_clean.tsv",
+  effect_clean_trait2_file <- "preprocessed_data/COVID_0403_effect_snp_clean.tsv",
+  distance_threshold <- 200000,  # Reduce from 200000 to 50000 ?
+  file_name <- "AD1_COVID2_Test"
+)
+
