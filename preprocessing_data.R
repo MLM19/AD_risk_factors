@@ -1,4 +1,4 @@
-#Cleaning data code, before merging.
+# Preprocessing, with pvalue with no new db10, works well for db 1 to 9
 
 #Set working directory
 #setwd("/media/marialm/6E98-2F9B/TFG")   #ubuntu
@@ -7,11 +7,13 @@
 #1. Load libraries
 library(data.table) #Efficient data handling (fread, fwrite)
 library(dplyr)  #Data manipulation (mutate, filter, distinct)
+library(R.utils) #For gunzip (files ending .bgz)
 
 #2.Functions
 ##Loading and validating the data function
 load_database <- function(input_path, separator = "\t", column_names) {
   file_name <- basename(input_path)
+  
   message("Loading dataset: ", file_name)
   
   data <- fread(input_path, sep = separator)            #read the data selecting the separator (by default is tab, but can specify space or comma)
@@ -27,14 +29,14 @@ load_database <- function(input_path, separator = "\t", column_names) {
 }
 
 ##Cleaning and analysing the dataset funtion 
-clean_and_analyze_database <- function(data, column_mapping, p_value_threshold = 5e-8) {  #column_mapping is a dictionary with the different configurations of the db, and the threshold can be modified aswell.
+clean_and_analyze_database <- function(data, column_mapping) {  #column_mapping is a dictionary with the different configurations of the db, and the threshold can be modified aswell.
   message("Cleaning and analyzing data...")
   
   #if beta is not a column then incorporate it by converting odds ratio into a new column
   if (!"beta" %in% colnames(data) && "odds_ratio" %in% colnames(data)) {      #true beta not in data, true odds_ratio in data
     message("Converting odds ratio to beta.")
     data <- data %>% mutate(beta = ifelse(odds_ratio > 0, log(odds_ratio), NA))  #if odds ratio is bigger than 0, calculate the beta=log(odds_ratio) otherwise NA
-  }
+  } 
   
   #Rename the columns based on mapping
   data <- data %>% rename(!!!column_mapping)  #!!! allows dynamic renaming, must have multiple values (columns, threshold, mapping)
@@ -54,7 +56,6 @@ clean_and_analyze_database <- function(data, column_mapping, p_value_threshold =
   #Filtering out 
   data <- data %>% select(where(~ !all(is.na(.))))  #remove the columns that only contain NA as data
   data <- na.omit(data)               #Remove rows with NA values
-  #data <- data %>% filter(p_value <= p_value_threshold) #Filter the data with p-value smaller than given p-value threshold
   data <- data %>% filter(nchar(effect_allele) == 1 & nchar(alt_allele) == 1) #Not interested in indels, only one allele must be affected
   
   transitions <- c("A,G", "G,A", "C,T", "T,C")   #Filter out transversions, by defining transitions
@@ -116,6 +117,18 @@ quality_check <- function(data) {
   return(data)
 }
 
+##Detect the database configuration function
+detect_database_config <- function(data) {
+  for (db_name in names(database_configs)) {   #check each of the configurations in the dictionary 
+    config <- database_configs[[db_name]]      #select one configuration to start comparing (that way we have the object and can use it's key values)
+    if (all(config$columns %in% colnames(data))){  #Check that all the columns of the selected configuration are in the column names of our data
+      message("Detected database: ", db_name)   #We have selected a configuration that works for our database
+      return(config)
+    }
+  }
+  stop("No matching database structure found:(")  #There are no configurations that adapt to our database --> must add the new configuration manually
+}
+
 #Dictionary for column mappings and separators -> it contains the names of the columns we are to find, the separator that db configuration has and also a list of the names of the columns to do the mapping later on
 #This allows the program to dynamically detect what configuration the database has, and adapt to processing it that way. 
 database_configs <- list(
@@ -139,65 +152,89 @@ database_configs <- list(
              mapping = list(rs_id = "variant_id",chr = "chromosome",pos = "base_pair_location",effect_allele = "effect_allele",alt_allele = "other_allele",beta = "beta",SE = "standard_error",p_value = "p_value"))
 )
 
-##Detect the database configuration function
-detect_database_config <- function(data) {
-  for (db_name in names(database_configs)) {   #check each of the configurations in the dictionary 
-    config <- database_configs[[db_name]]      #select one configuration to start comparing (that way we have the object and can use it's key values)
-    if (all(config$columns %in% colnames(data))){  #Check that all the columns of the selected configuration are in the column names of our data
-      message("Detected database: ", db_name)   #We have selected a configuration that works for our database
-      return(config)
-    }
-  }
-  stop("No matching database structure found:(")  #There are no configurations that adapt to our database --> must add the new configuration manually
-}
-
-
 ##MAIN FUNCTION
 process_gwas <- function(input_path, db_name, separator = "\t", p_value_threshold = 5e-8) { #by default, separator is going to be a tab (more common), and threshold is going to be 5e-8 (can be changed)
   message("Processing GWAS dataset...")
   
-  #Loads first row of data to be able to check its configuration, with the given separator
+  # Loads first row of data to be able to check its configuration, with the given separator
   data <- fread(input_path, sep = separator, nrows = 1) 
   if (ncol(data)==1) {        #If the data is loaded with 1 column, means that the separator is not good. We should have at least 8 columns
     stop("The separator seems incorrect, must be changed")   #Stop the process to change the separator
   }
   config <- detect_database_config(data) #check for the best configuration for the db
   
-  #Properly load the data, having checked the proper separator and configuration
+  # Properly load the data, having checked the proper separator and configuration
   data <- load_database(input_path, separator = separator, column_names = config$columns)
   
-  ##Use functions to clean and check the data
-  cleaned_data <- clean_and_analyze_database(data, config$mapping, p_value_threshold) #colum names are found in the config of the db
+  ## Use functions to clean and check the data
+  cleaned_data <- clean_and_analyze_database(data, config$mapping) #colum names are found in the config of the db
   final_data <- quality_check(cleaned_data)
   
-  ##Generate output files
-  #Create the names of the files
+  ## Filter by significant p-value
+  significant_data <- final_data %>% filter(p_value <= p_value_threshold)
+  message("Dimensions of significant data: ", paste(dim(significant_data), collapse = " x "))
+  
+  ## Generate output files
+  # Create the names of the files
   snp_table_file <- paste0("preprocessed_data/", db_name, "_snp_clean.tsv")
   effect_snp_table_file <- paste0("preprocessed_data/", db_name, "_effect_snp_clean.tsv")
   
-  #Keep the data from the preprocessed data
+  # Keep the data from the preprocessed data
   snp_table <- final_data %>% select(rs_id, chr, pos, effect_allele, alt_allele)
   effect_snp_table <- final_data %>% select(rs_id, chr, pos, SE, beta, p_value)
   
-  #Save the results into files
+  # Save the results into files
   fwrite(snp_table, snp_table_file, sep = "\t")
   fwrite(effect_snp_table, effect_snp_table_file, sep = "\t")
   
-  #Tracker of the work being well done
+  # Tracker of the work being well done
   message("Results saved in generated files: ")
   message("- ", snp_table_file)
   message("Dimensions: ", paste(dim(snp_table), collapse = " x "))
   message("- ", effect_snp_table_file)
   message("Dimensions: ", paste(dim(effect_snp_table), collapse = " x "))
   
-  return(list(
-    cleaned_data = final_data,
-    snp_table = snp_table,
-    effect_snp_table = effect_snp_table
-  ))
+  # Check if there are significant SNPs before writing the files
+  if (nrow(significant_data) > 0) {
+    # Create file names for significant data
+    snp_significant_file <- paste0("preprocessed_data/", db_name, "_snp_significant.tsv")
+    effect_snp_significant_file <- paste0("preprocessed_data/", db_name, "_effect_snp_significant.tsv")
+    
+    # Extract the data from significant_data
+    snp_significant <- significant_data %>% select(rs_id, chr, pos, effect_allele, alt_allele)
+    effect_snp_significant <- significant_data %>% select(rs_id, chr, pos, SE, beta, p_value)
+    
+    # Save significant data to files
+    fwrite(snp_significant, snp_significant_file, sep = "\t")
+    fwrite(effect_snp_significant, effect_snp_significant_file, sep = "\t")
+    
+    # Message that significant data has been saved
+    message("- ", snp_significant_file)
+    message("Dimensions: ", paste(dim(snp_significant), collapse = " x "))
+    message("- ", effect_snp_significant_file)
+    message("Dimensions: ", paste(dim(effect_snp_significant), collapse = " x "))
+    
+    return(list(
+      cleaned_data = final_data,
+      snp_table = snp_table,
+      effect_snp_table = effect_snp_table,
+      significant_data = significant_data,
+      snp_significant = snp_significant,
+      effect_snp_significant = effect_snp_significant
+    ))
+  } else {
+    message("No significant SNPs found based on the given p-value threshold.")
+    
+    return(list(
+      cleaned_data = final_data,
+      snp_table = snp_table,
+      effect_snp_table = effect_snp_table,
+      significant_data = significant_data
+    ))
+  }
 }
 
 #3. Implementation
-input_path <- "Raw_Data/GCST90435742.h.tsv.gz"
-db_name <- "VITD_5742"
+input_path <- "Raw_Data/34594039-GCST90018941-EFO_0006510.h.tsv.gz"
+db_name <- "HerpZo_8941"
 processed_data <- process_gwas(input_path, db_name, separator = "\t", p_value_threshold = 10e-5)
