@@ -1,4 +1,4 @@
-# Preprocessing, with pvalue with no new db10, works well for db 1 to 9
+# Preprocessing, with pvalue, with 10 configurations
 
 #Set working directory
 #setwd("/media/marialm/6E98-2F9B/TFG")   #ubuntu
@@ -14,6 +14,14 @@ library(R.utils) #For gunzip (files ending .bgz)
 load_database <- function(input_path, separator = "\t", column_names) {
   file_name <- basename(input_path)
   
+  #If file is compressed in .bgz, we decompress it first
+  if (grepl("\\.bgz$", file_name)) {
+    message("Detected .bgz file. Decompressing...")
+    decompressed_path <- sub("\\.bgz$", "", input_path)  #Remove .bgz extension
+    gunzip(input_path, destname = decompressed_path, overwrite = FALSE)  #Decompress
+    input_path <- decompressed_path  #Update the path to the decompressed file
+  }
+  
   message("Loading dataset: ", file_name)
   
   data <- fread(input_path, sep = separator)            #read the data selecting the separator (by default is tab, but can specify space or comma)
@@ -23,53 +31,85 @@ load_database <- function(input_path, separator = "\t", column_names) {
     stop("Missing columns in dataset: ", paste(missing_cols, collapse = ", ")) #return a message with the columns that are not found in the db if there are
   }
   
-  message("Dataset loaded successfully:)")                                         
+  message("Dataset loaded successfully:)")
   message("Dimensions of loaded database: ", paste(dim(data), collapse = " x "))   #print dimensions to check
   return(data)
 }
 
-##Cleaning and analysing the dataset funtion 
-clean_and_analyze_database <- function(data, column_mapping) {  #column_mapping is a dictionary with the different configurations of the db, and the threshold can be modified aswell.
+##Cleaning and analysing the dataset function
+clean_and_analyze_database <- function(data, column_mapping) {
   message("Cleaning and analyzing data...")
   
-  #if beta is not a column then incorporate it by converting odds ratio into a new column
-  if (!"beta" %in% colnames(data) && "odds_ratio" %in% colnames(data)) {      #true beta not in data, true odds_ratio in data
-    message("Converting odds ratio to beta.")
-    data <- data %>% mutate(beta = ifelse(odds_ratio > 0, log(odds_ratio), NA))  #if odds ratio is bigger than 0, calculate the beta=log(odds_ratio) otherwise NA
-  } 
+  message("Initial columns in the data:") #marker
+  print(colnames(data))
   
-  #Rename the columns based on mapping
-  data <- data %>% rename(!!!column_mapping)  #!!! allows dynamic renaming, must have multiple values (columns, threshold, mapping)
+  ##if beta is not a column then incorporate it by converting odds ratio into a new column
+  if (!"beta" %in% colnames(data) && "odds_ratio" %in% colnames(data)) {
+    message("Converting odds ratio to beta.")
+    data <- data %>% mutate(beta = ifelse(odds_ratio > 0, log(odds_ratio), NA))
+  }
+  
+  #To rename the columns, handling potential duplicates?
+  for (new_name in names(column_mapping)) {
+    old_name <- column_mapping[[new_name]]
+    if (old_name %in% colnames(data)) {
+      # Check if the new name already exists. If so, remove the existing column
+      if (new_name %in% colnames(data) && new_name != old_name) {
+        data <- data %>% select(-{{new_name}}) # Remove the existing column
+        message("Column ", new_name, " already exists, so it was removed before renaming ", old_name)
+      }
+      
+      # Rename the column
+      data <- data %>% rename(!!new_name := !!old_name)
+    }
+  }
+  
+  #Create rs_id column if it doesn't exist and required columns are present
+  if (!"rs_id" %in% colnames(data) && all(c("chr", "pos", "effect_allele") %in% colnames(data))) {
+    message("Creating rs_id column from chr, pos, and effect_allele.")
+    data[, rs_id := paste(chr, pos, effect_allele, sep = "_")]
+  }
+  
+  # Compute p-value, handling potential absence of neglog10_pval_EUR
+  if ("neglog10_pval_EUR" %in% colnames(data)) {
+    message("Computing p_value from neglog10_pval_EUR.")
+    data[, p_value := 10^(-neglog10_pval_EUR)]
+    data[, neglog10_pval_EUR := NULL]  # Remove the original column
+  } else if (!"p_value" %in% colnames(data)) {
+    stop("No p_value column found, and neglog10_pval_EUR not present to compute it.")
+  }
+  
+  message("Columns after renaming:") #marker
+  print(colnames(data))
   
   #Convert data types
-  data <- data %>%       #convert the data types into the ones we are most interested
+  data <- data %>%
     mutate(
-      effect_allele = toupper(effect_allele), #ensure capital letters for alleles so that it can be analysed
+      effect_allele = toupper(effect_allele),
       alt_allele = toupper(alt_allele),
-      p_value = as.numeric(p_value), 
+      p_value = as.numeric(p_value),
       chr = as.factor(chr),
-      pos = as.numeric(pos),   #nt position must be numeric
+      pos = as.numeric(pos),
       beta = as.numeric(beta),
       SE = as.numeric(SE)
     )
   
-  #Filtering out 
+  #Filtering out
   data <- data %>% select(where(~ !all(is.na(.))))  #remove the columns that only contain NA as data
   data <- na.omit(data)               #Remove rows with NA values
   data <- data %>% filter(nchar(effect_allele) == 1 & nchar(alt_allele) == 1) #Not interested in indels, only one allele must be affected
   
   transitions <- c("A,G", "G,A", "C,T", "T,C")   #Filter out transversions, by defining transitions
-  data <- data %>% 
+  data <- data %>%
     filter(paste(effect_allele, alt_allele, sep = ",") %in% transitions)   #Take the values of these two columns and check if they are on the list of transitions, then keep them if they are.
   
   message("Data cleaning and analysis complete.")
   message("Dimensions of cleaned database: ", paste(dim(data), collapse = " x "))  #State dimensions to check that the filtering is well done
   
   #Stop if the cleaned data has no rows or columns
-  if (dim(data)[1] == 0 || dim(data)[2] == 0) {           
+  if (dim(data)[1] == 0 || dim(data)[2] == 0) {
     stop("Error: No SNPs for which we are interested --> Stopping further processing.")
   }
-  
   return(data) #provide the clean data
 }
 
@@ -97,7 +137,7 @@ quality_check <- function(data) {
     data$chr <- as.factor(data$chr)          #if the structure was not correct then transform it into the correct one for chr, pos, beta, SE and the p-value
   }
   if (!is.numeric(data$pos)) {
-    message("Converting 'pos' to numeric...") 
+    message("Converting 'pos' to numeric...")
     data$pos <- as.numeric(data$pos)
   }
   if (!is.numeric(data$beta)) {
@@ -119,9 +159,9 @@ quality_check <- function(data) {
 
 ##Detect the database configuration function
 detect_database_config <- function(data) {
-  for (db_name in names(database_configs)) {   #check each of the configurations in the dictionary 
+  for (db_name in names(database_configs)) {   #check each of the configurations in the dictionary
     config <- database_configs[[db_name]]      #select one configuration to start comparing (that way we have the object and can use it's key values)
-    if (all(config$columns %in% colnames(data))){  #Check that all the columns of the selected configuration are in the column names of our data
+    if (all(config$columns %in% colnames(data))) {  #Check that all the columns of the selected configuration are in the column names of our data
       message("Detected database: ", db_name)   #We have selected a configuration that works for our database
       return(config)
     }
@@ -130,41 +170,43 @@ detect_database_config <- function(data) {
 }
 
 #Dictionary for column mappings and separators -> it contains the names of the columns we are to find, the separator that db configuration has and also a list of the names of the columns to do the mapping later on
-#This allows the program to dynamically detect what configuration the database has, and adapt to processing it that way. 
+#This allows the program to dynamically detect what configuration the database has, and adapt to processing it that way.
 database_configs <- list(
   db1 = list(columns = c("SNP", "CHR", "BP", "A1", "A2", "BETA", "SE", "P"), sep = " ",
              mapping = list(rs_id = "SNP", chr = "CHR", pos = "BP", effect_allele = "A1", alt_allele = "A2", beta = "BETA", SE = "SE", p_value = "P")),
-  db2 = list(columns = c("rs_id", "chromosome", "base_pair_location", "effect_allele", "other_allele", "beta", "standard_error", "p_value"), sep = "\t", 
+  db2 = list(columns = c("rs_id", "chromosome", "base_pair_location", "effect_allele", "other_allele", "beta", "standard_error", "p_value"), sep = "\t",
              mapping = list(rs_id = "rs_id", chr = "chromosome", pos = "base_pair_location", effect_allele = "effect_allele", alt_allele = "other_allele", beta = "beta", SE = "standard_error", p_value = "p_value")),
-  db3 = list(columns = c("MarkerName", "CHR", "POS", "A1", "A2", "Beta", "SE", "Pval"), sep = "\t", 
+  db3 = list(columns = c("MarkerName", "CHR", "POS", "A1", "A2", "Beta", "SE", "Pval"), sep = "\t",
              mapping = list(rs_id = "MarkerName", chr = "CHR", pos = "POS", effect_allele = "A1", alt_allele = "A2", beta = "Beta", SE = "SE", p_value = "Pval")),
-  db4 = list(columns = c("hm_rsid", "chromosome", "base_pair_location", "effect_allele", "other_allele", "beta", "standard_error", "p_value"), sep = "\t", 
-             mapping = list(rs_id = "hm_rsid", chr = "chromosome", pos = "base_pair_location", effect_allele = "effect_allele", alt_allele = "other_allele", beta = "beta", SE = "standard_error", p_value = "p_value")),
+  db4 = list(columns = c("hm_rsid", "hm_chrom","hm_pos", "hm_other_allele", "hm_effect_allele", "hm_beta", "standard_error", "p_value"), sep = "\t",
+             mapping = list(rs_id = "hm_rsid", chr = "hm_chrom", pos = "hm_pos", effect_allele = "hm_effect_allele", alt_allele = "hm_other_allele", beta = "hm_beta", SE = "standard_error", p_value = "p_value")),
   db5 = list(columns = c("rsid", "chromosome", "base_pair_location", "effect_allele", "other_allele", "beta", "standard_error", "p_value"), sep = "\t",
              mapping = list(rs_id = "rsid", chr = "chromosome", pos = "base_pair_location", effect_allele = "effect_allele", alt_allele = "other_allele", beta = "beta", SE = "standard_error", p_value = "p_value")),
   db6 = list(columns = c("variant_id", "chromosome", "base_pair_location", "effect_allele", "other_allele", "odds_ratio", "standard_error", "p_value"), sep = "\t",
-             mapping = list(rs_id = "variant_id",chr = "chromosome",pos = "base_pair_location",effect_allele = "effect_allele",alt_allele = "other_allele",beta = "beta",SE = "standard_error",p_value = "p_value")),
-  db7 = list(columns = c("MarkerName", "Chromosome", "Position", "Effect_allele", "Non_Effect_allele", "Beta", "SE", "Pvalue"), sep = " ", 
-             mapping = list(rs_id = "MarkerName",chr = "Chromosome",pos = "Position",effect_allele = "Effect_allele",alt_allele = "Non_Effect_allele",beta = "Beta",SE = "SE",p_value = "Pvalue")),
+             mapping = list(rs_id = "variant_id", chr = "chromosome", pos = "base_pair_location", effect_allele = "effect_allele", alt_allele = "other_allele", beta = "beta", SE = "standard_error", p_value = "p_value")),
+  db7 = list(columns = c("MarkerName", "Chromosome", "Position", "Effect_allele", "Non_Effect_allele", "Beta", "SE", "Pvalue"), sep = " ",
+             mapping = list(rs_id = "MarkerName", chr = "Chromosome", pos = "Position", effect_allele = "Effect_allele", alt_allele = "Non_Effect_allele", beta = "Beta", SE = "SE", p_value = "Pvalue")),
   db8 = list(columns = c("Name", "chromosome", "base_pair_location", "effect_allele", "other_allele", "odds_ratio", "standard_error", "p_value"), sep = "\t",
-             mapping = list(rs_id = "Name",chr = "chromosome",pos = "base_pair_location",effect_allele = "effect_allele",alt_allele = "other_allele",beta = "beta",SE = "standard_error",p_value = "p_value")), 
+             mapping = list(rs_id = "Name", chr = "chromosome", pos = "base_pair_location", effect_allele = "effect_allele", alt_allele = "other_allele", beta = "beta", SE = "standard_error", p_value = "p_value")),
   db9 = list(columns = c("variant_id", "chromosome", "base_pair_location", "effect_allele", "other_allele", "beta", "standard_error", "p_value"), sep = "\t",
-             mapping = list(rs_id = "variant_id",chr = "chromosome",pos = "base_pair_location",effect_allele = "effect_allele",alt_allele = "other_allele",beta = "beta",SE = "standard_error",p_value = "p_value"))
+             mapping = list(rs_id = "variant_id", chr = "chromosome", pos = "base_pair_location", effect_allele = "effect_allele", alt_allele = "other_allele", beta = "beta", SE = "standard_error", p_value = "p_value")),
+  db10 = list(columns = c("chr", "pos", "ref", "alt", "beta_EUR", "se_EUR", "neglog10_pval_EUR"), sep = "\t",
+              mapping = list(chr = "chr", pos = "pos", effect_allele = "ref", alt_allele = "alt", beta = "beta_EUR", SE = "se_EUR", p_value = "p_value"))
 )
 
 ##MAIN FUNCTION
-process_gwas <- function(input_path, db_name, separator = "\t", p_value_threshold = 5e-8) { #by default, separator is going to be a tab (more common), and threshold is going to be 5e-8 (can be changed)
+process_gwas <- function(input_path, db_name, separator = "\t", p_value_threshold = 10e-5) { #by default, separator is going to be a tab (more common), and threshold is going to be 5e-8 (can be changed)
   message("Processing GWAS dataset...")
   
   # Loads first row of data to be able to check its configuration, with the given separator
-  data <- fread(input_path, sep = separator, nrows = 1) 
-  if (ncol(data)==1) {        #If the data is loaded with 1 column, means that the separator is not good. We should have at least 8 columns
+  data <- fread(input_path, sep = separator, nrows = 1)
+  if (ncol(data) == 1) {        #If the data is loaded with 1 column, means that the separator is not good. We should have at least 8 columns
     stop("The separator seems incorrect, must be changed")   #Stop the process to change the separator
   }
   config <- detect_database_config(data) #check for the best configuration for the db
   
   # Properly load the data, having checked the proper separator and configuration
-  data <- load_database(input_path, separator = separator, column_names = config$columns)
+  data <- load_database(input_path, separator = config$sep, column_names = config$columns)
   
   ## Use functions to clean and check the data
   cleaned_data <- clean_and_analyze_database(data, config$mapping) #colum names are found in the config of the db
@@ -235,6 +277,6 @@ process_gwas <- function(input_path, db_name, separator = "\t", p_value_threshol
 }
 
 #3. Implementation
-input_path <- "Raw_Data/34594039-GCST90018941-EFO_0006510.h.tsv.gz"
-db_name <- "HerpZo_8941"
+input_path <- "Raw_Data/GCST90079759_buildGRCh38.tsv.gz"
+db_name <- "VITD_9759"
 processed_data <- process_gwas(input_path, db_name, separator = "\t", p_value_threshold = 10e-5)
