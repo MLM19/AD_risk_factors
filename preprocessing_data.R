@@ -192,10 +192,11 @@ plot_gwas_results <- function(cleandata, dataset_name, p_value_threshold = 1e-5)
     stop("Missing required columns for Manhattan plot!")
   }
   
-  # Convert chr column to numeric
+  # Convert chr to numeric, keeping X as 23 and Y as 24
   if (!is.numeric(cleandata$chr)) {
     message("Converting 'chr' to numeric for Manhattan plot...")
-    cleandata[, chr := as.numeric(chr)] # Convert factor to numeric
+    cleandata[, chr := ifelse(chr == "X", 23, ifelse(chr == "Y", 24, as.numeric(chr)))]
+    cleandata <- cleandata[!is.na(chr)]  # Remove any remaining NA values
   }
   
   sig_threshold <- -log10(p_value_threshold)  # GWAS significance threshold (as reference to articles)
@@ -359,7 +360,7 @@ input_path <- "Raw_Data/GCST90274723.h.tsv.gz"
 db_name <- "STROK_4723"
 processed_data <- process_gwas(input_path, db_name, separator = "\t", p_value_threshold = 1e-5)
 
-# To visualize the data separately:
+# To visualize the data after processing the data
 if (!is.null(processed_data)) {
   plot_gwas_results(processed_data$final_data, processed_data$db_name)
 } else {
