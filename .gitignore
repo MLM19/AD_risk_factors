@@ -1,1 +1,2 @@
-#**/name_file #this is indicating to git never to take into account thisRaw_Data/
+# This file is to add those files or directories that Git is going to ignore
+
