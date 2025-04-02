@@ -2,7 +2,7 @@
 # MUST HAVE: trait_effect_snp_clean.tsv --> Include columns rs_id, chr, pos, SE, beta, and p_value.
 
 #1. Loading libraries
-library(data.table) # Efficient data handling (fread, fwrite)
+library(data.table) # Efficient data handling (fread, fwrite, fifelse)
 library(qqman)  # GWAS visualization (manhattan, qq)
 
 #2. Function
@@ -15,9 +15,20 @@ plot_gwas_results <- function(cleandata, dataset_name, p_value_threshold = 1e-5)
   # Convert chr to numeric, keeping X as 23 and Y as 24
   if (!is.numeric(cleandata$chr)) {
     message("Converting 'chr' to numeric for Manhattan plot...")
-    cleandata[, chr := ifelse(chr == "X", 23, ifelse(chr == "Y", 24, as.numeric(chr)))]
-    cleandata <- cleandata[!is.na(chr)]  # Remove any remaining NA values
+    cleandata[, chr := fifelse(chr == "X", 23,  #Using fifelse(), optimized and prevents unnecessary coercion warnings
+                               fifelse(chr == "Y", 24, 
+                                       suppressWarnings(as.numeric(chr))))] 
+    cleandata <- cleandata[!is.na(chr) & is.finite(chr)]   # Remove any remaining NA values
   }
+  
+  # Ensure p_value is numeric
+  cleandata[, p_value := as.numeric(p_value)]
+  
+  # Remove problematic p-values
+  cleandata <- cleandata[!is.na(p_value) & p_value > 0]
+  
+  message("Verify the conversion of the chromosome column")
+  print(unique(cleandata$chr))
   
   sig_threshold <- -log10(p_value_threshold)  # GWAS significance threshold (as reference to articles)
   dir.create("Images", showWarnings = FALSE, recursive = TRUE) # Make sure that the directory exists
@@ -53,7 +64,7 @@ plot_gwas_results <- function(cleandata, dataset_name, p_value_threshold = 1e-5)
 }
 
 #3. Implementation
-db_name <- "HerpZo_8721"
+db_name <- "MENOP_2553"
 message("Uploading preprocessed data...")
 cleandata_path <- paste0("preprocessed_data/", db_name, "_effect_snp_clean.tsv")
 #Check if file exists to make sure that the data was already preprocessed. 
@@ -65,3 +76,4 @@ if (file.exists(cleandata_path)) {
 } else {
   message("File not found: ", cleandata_path)
 }
+
