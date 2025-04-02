@@ -195,9 +195,20 @@ plot_gwas_results <- function(cleandata, dataset_name, p_value_threshold = 1e-5)
   # Convert chr to numeric, keeping X as 23 and Y as 24
   if (!is.numeric(cleandata$chr)) {
     message("Converting 'chr' to numeric for Manhattan plot...")
-    cleandata[, chr := ifelse(chr == "X", 23, ifelse(chr == "Y", 24, as.numeric(chr)))]
-    cleandata <- cleandata[!is.na(chr)]  # Remove any remaining NA values
+    cleandata[, chr := fifelse(chr == "X", 23,  #Using fifelse(), optimized and prevents unnecessary coercion warnings
+                               fifelse(chr == "Y", 24, 
+                                       suppressWarnings(as.numeric(chr))))] 
+    cleandata <- cleandata[!is.na(chr) & is.finite(chr)]   # Remove any remaining NA values
   }
+  
+  # Ensure p_value is numeric
+  cleandata[, p_value := as.numeric(p_value)]
+  
+  # Remove problematic p-values
+  cleandata <- cleandata[!is.na(p_value) & p_value > 0]
+  
+  message("Verify the conversion of the chromosome column")
+  print(unique(cleandata$chr))
   
   sig_threshold <- -log10(p_value_threshold)  # GWAS significance threshold (as reference to articles)
   dir.create("Images", showWarnings = FALSE, recursive = TRUE) # Make sure that the directory exists
@@ -356,8 +367,8 @@ process_gwas <- function(input_path, db_name, separator = "\t", p_value_threshol
   return(list(final_data = final_data, db_name = db_name)) # Return the final_data and db_name
 }
 
-input_path <- "Raw_Data/GCST90274723.h.tsv.gz"
-db_name <- "STROK_4723"
+input_path <- "Raw_Data/GCST90435524.h.tsv.gz"
+db_name <- "HSV_5524"
 processed_data <- process_gwas(input_path, db_name, separator = "\t", p_value_threshold = 1e-5)
 
 # To visualize the data after processing the data
