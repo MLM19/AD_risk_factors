@@ -2,9 +2,7 @@
 Genetic clues to AD: Uncovering Environmental Risk factors through GWAS
 
 The project is prepared to be downloaded and run the codes from the "General" directory for which the pathways are prepared. Otherwise, just adjust the pathways of where the data is located and the other directories are. 
-
-Since GWAS data files are too large the usage of Git Large File Storage (LFS) is needed. 
-
+The directories are created in the repository but only a placeholder is found inside them. It contains links to the google drive cointaining the files for downloading since the files are too large. 
 In order for the scripts to work, the following directories are needed:
 
 | **Directory**          | **Intended content of the directory** | **Comments** |
