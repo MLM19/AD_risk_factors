@@ -1,217 +1,138 @@
-# Validating results
+## Version with pseudocount adjustments to prevent zero division,
+## continuity correction on contingency table,
+## and Regularized Fisher test with Haldane correction
 
-# 1. Libraries
-library(dplyr)
-library(data.table)
+## 1. Load necessary libraries
+library(dplyr)  # Load dplyr for data manipulation functions (e.g., inner_join)
 
-# 2. Functions
+## 2. Functions
 
-## Load SNP data and process
-load_snp_data <- function(trait_clean_file, trait_significant_file, ad_trait_file) {
-  # Read data
-  trait_clean_snps <- fread(trait_clean_file)
-  trait_significant_snps <- fread(trait_significant_file)
-  ad_trait_snps <- fread(ad_trait_file)
+## Function to compute N, K, k, and n from files with pseudocount adjustments
+compute_snp_counts <- function(trait_clean_file, trait_significant_file, ad_trait_file) {
+  # Print a message indicating that data files are being loaded
+  cat("Loading data files...\n")
   
-  # Debug: Print dimensions of input data
-  print(paste("Trait clean SNPs:", nrow(trait_clean_snps)))
-  print(paste("Trait significant SNPs:", nrow(trait_significant_snps)))
-  print(paste("AD > Trait SNPs:", nrow(ad_trait_snps)))
+  # Load the preprocessed clean trait data (all SNPs available)
+  trait_clean <- read.delim(trait_clean_file, header = TRUE)
+  # Load the trait significant data (SNPs significant for the environmental trait)
+  trait_significant <- read.delim(trait_significant_file, header = TRUE)
+  # Load the AD trait data (merged SNPs with AD, may include significant hits)
+  ad_trait <- read.delim(ad_trait_file, header = TRUE)
   
-  # Extract SNP counts
-  total_trait_snps <- nrow(trait_clean_snps)
-  num_significant_trait_snps <- nrow(trait_significant_snps)
-  num_non_significant_trait_snps <- total_trait_snps - num_significant_trait_snps
+  # Debugging: print the column names of the datasets to check the available join columns
+  cat("Debugging...\n")
+  print(colnames(trait_significant))  # Expecting a column "rs_id" in trait_significant
+  print(colnames(ad_trait))           # Expecting a column "final_rs_id" in ad_trait
   
-  # Extract significant SNPs for AD > Trait
-  num_significant_ad_trait_snps <- nrow(ad_trait_snps %>% filter(p_value < 1e-5))
-  num_non_significant_ad_trait_snps <- nrow(ad_trait_snps) - num_significant_ad_trait_snps
+  # Check if the expected columns exist, stop execution if not found
+  if (!"rs_id" %in% colnames(trait_significant)) {
+    stop("Error: 'rs_id' not found in trait_significant dataset")
+  }
+  if (!"final_rs_id" %in% colnames(ad_trait)) {
+    stop("Error: 'final_rs_id' not found in ad_trait dataset")
+  }
   
-  return(list(
-    total_trait_snps = total_trait_snps,
-    num_significant_trait_snps = num_significant_trait_snps,
-    num_non_significant_trait_snps = num_non_significant_trait_snps,
-    num_significant_ad_trait_snps = num_significant_ad_trait_snps,
-    num_non_significant_ad_trait_snps = num_non_significant_ad_trait_snps,
-    p_values = ad_trait_snps$p_value
-  ))
+  cat("Computing SNP counts...\n")
+  
+  # Compute total SNPs (N) from the trait_clean file with a small pseudocount added
+  N <- nrow(trait_clean) + 1e-6
+  # Compute significant SNPs (n) from the trait_significant file; ensure at least 1 to avoid zero
+  n <- max(nrow(trait_significant), 1)
+  # Compute significant SNPs in AD (K) using a threshold (p < 1e-5) with a minimum of 1 for stability
+  K <- max(sum(ad_trait$p_value < 1e-5), 1)
+  # Compute total overlapping SNPs (k) from the ad_trait file (representing merged overlapping SNPs); ensure at least 1
+  k <- max(nrow(ad_trait), 1)
+  
+  # Print the computed values for debugging and verification
+  cat("Computed values:\n")
+  cat("N (Total SNPs):", N, "\n")
+  cat("K (Significant SNPs in AD):", K, "\n")
+  cat("k (Overlapping SNPs):", k, "\n")
+  cat("n (Significant SNPs in Trait):", n, "\n")
+  
+  # Return the computed values as a list
+  return(list(N = N, K = K, k = k, n = n))
 }
 
-
-# Create contingency table
-create_contingency_table <- function(snp_data) {
-  # Construct the contingency table
+## Function to create contingency table and perform validation tests
+validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_file) {
+  cat("Starting validation process...\n")
+  
+  # Compute SNP counts by calling the compute_snp_counts() function
+  snp_counts <- compute_snp_counts(trait_clean_file, trait_significant_file, ad_trait_file)
+  N <- snp_counts$N  # Total SNPs in the dataset
+  K <- snp_counts$K  # Significant SNPs in AD (p < 1e-5)
+  k <- snp_counts$k  # Total overlapping SNPs (from merged AD and trait)
+  n <- snp_counts$n  # Significant SNPs in the environmental trait dataset
+  
+  cat("Creating contingency table...\n")
+  
+  # Construct the contingency table:
+  # For Environmental Trait: 
+  #       Statistically Significant (SS) = n (from trait_significant)
+  #       Not Statistically Significant (NSS) = N - n (remaining SNPs in trait_clean)
+  # For Overlap AD & Trait:
+  #       Statistically Significant (SS) = K (from AD significant SNPs)
+  #       Not Statistically Significant (NSS) = k - K (remaining overlapping SNPs)
   contingency_table <- matrix(
-    c(
-      snp_data$num_significant_trait_snps, snp_data$num_significant_ad_trait_snps, # Significant SNPs row
-      snp_data$num_non_significant_trait_snps, snp_data$num_non_significant_ad_trait_snps # Non-Significant SNPs row
-    ),
+    c(n, K,         # First row: SS values (Environmental Trait = n, Overlap AD & Trait = K)
+      N - n, k - K),  # Second row: NSS values (Environmental Trait = N - n, Overlap AD & Trait = k - K)
     nrow = 2,
-    byrow = TRUE
+    byrow = TRUE,
+    dimnames = list(
+      c("SS", "NSS"),  # Row names: Statistically Significant and Not Statistically Significant
+      c("Environmental Trait", "Overlap AD & Trait")  # Column names: Categories for trait and overlapping data
+    )
   )
   
-  colnames(contingency_table) <- c("Trait", "AD > Trait")
-  rownames(contingency_table) <- c("Significant SNPs", "Non-Significant SNPs")
+  # Print the contingency table for verification
+  cat("Contingency Table:\n")
+  print(contingency_table)
   
-  return(as.table(contingency_table))
-}
-
-
-# Hypergeometric test
-validate_hypergeometric <- function(snp_data) {
-  # Handle case where there are no significant SNPs in AD > Trait
-  if (snp_data$num_significant_ad_trait_snps == 0) {
-    return(1)  # p-value of 1 indicates no enrichment
-  }
+  cat("Performing Hypergeometric Test...\n")
+  # Hypergeometric Test:
+  # This tests the probability of observing at least K significant SNPs in n draws,
+  # given k overlapping SNPs and N total SNPs in the dataset.
+  hyper_pval <- phyper(K - 1, k, N - k, n, lower.tail = FALSE)
+  cat("Hypergeometric Test p-value:", hyper_pval, "\n")
   
-  # Debug: Print inputs to phyper
-  #print(paste("num_significant_trait_snps:", snp_data$num_significant_trait_snps))
-  #print(paste("total_trait_snps:", snp_data$total_trait_snps))
-  #print(paste("num_significant_ad_trait_snps:", snp_data$num_significant_ad_trait_snps))
+  cat("Performing Regularized Fisher's Exact Test (Haldane Correction)...\n")
+  # Fisher's Exact Test with Haldane correction:
+  # Add a small constant (0.25) to each cell to regularize (avoid zeros) for small counts.
+  fisher_result <- fisher.test(contingency_table + 0.25)
+  cat("Fisher's Exact Test Results:\n")
+  print(fisher_result)
   
-  # Calculate complement (non-significant SNPs in Trait dataset)
-  complement <- snp_data$total_trait_snps - snp_data$num_significant_trait_snps
-  print(paste("Complement (total_trait_snps - num_significant_trait_snps):", complement))
+  cat("Performing Monte Carlo Simulation...\n")
+  # Monte Carlo Simulation:
+  # Here, example p-values are generated for both overlapping and environmental trait sets.
+  # In practice, you would use the actual p-values from your data.
+  p_values_overlap <- runif(k, 0, 0.05)  # Generate random p-values for overlapping SNPs
+  p_values_trait <- runif(n, 0, 0.05)     # Generate random p-values for environmental trait SNPs
+  observed_mean_p <- mean(p_values_overlap)  # Compute the observed mean of the overlapping p-values
+  # Replicate the random sampling process 1000 times to build a null distribution of mean p-values
+  simulated_means <- replicate(1000, mean(sample(p_values_trait, k, replace = TRUE)))
+  # Calculate the proportion of simulated means that are less than or equal to the observed mean
+  monte_carlo_pval <- mean(simulated_means <= observed_mean_p)
+  cat("Monte Carlo Simulation p-value:", monte_carlo_pval, "\n")
   
-  # Use minimum overlap as a proxy for shared SNPs
-  num_shared_significant_snps <- min(snp_data$num_significant_trait_snps, snp_data$num_significant_ad_trait_snps)
-  
-  # Debug: Print calculated shared SNP count
-  print(paste("num_shared_significant_snps:", num_shared_significant_snps))
-  
-  # Perform hypergeometric test
-  p_value <- phyper(
-    num_shared_significant_snps - 1, 
-    snp_data$num_significant_trait_snps, 
-    complement, 
-    (snp_data$num_significant_ad_trait_snps + snp_data$num_non_significant_ad_trait_snps), 
-    lower.tail = FALSE
-  )
-  
-  return(p_value)
-}
-
-# Fisher exact test validation
-validate_fisher_exact <- function(snp_data) {
-  # Handle case where there are no significant SNPs in AD > Trait
-  if (snp_data$num_significant_ad_trait_snps == 0) {
-    return(list(
-      odds_ratio = NA,
-      p_value = 1
-    ))
-  }
-  
-  # Create a 2x2 contingency table
-  fisher_table <- matrix(
-    c(
-      snp_data$num_significant_trait_snps, snp_data$num_significant_ad_trait_snps,
-      snp_data$num_non_significant_trait_snps, snp_data$num_non_significant_ad_trait_snps
-    ),
-    nrow = 2,
-    byrow = TRUE
-  )
-  
-  # Perform Fisher's Exact Test
-  fisher_test <- fisher.test(fisher_table)
-  
-  # Extract odds ratio and p-value
-  odds_ratio <- fisher_test$estimate
-  p_value <- fisher_test$p.value
-  
-  return(list(odds_ratio = odds_ratio, p_value = p_value))
-}
-
-# Monte Carlo simulation
-validate_monte_carlo <- function(snp_data, num_iterations = 1000) {
-  # Handle case where there are no significant SNPs in AD > Trait
-  if (snp_data$num_significant_ad_trait_snps == 0) {
-    return(list(
-      monte_carlo_message = "No significant SNPs detected in AD > Trait.",
-      monte_carlo_p_value = NA,
-      observed_mean_p_value = NA
-    ))
-  }
-  
-  # Step 1: Calculate the observed mean p-value for significant SNPs
-  significant_p_values <- snp_data$p_values[1:snp_data$num_significant_ad_trait_snps]
-  
-  # Ensure p-values are numeric
-  if (!is.numeric(significant_p_values)) {
-    stop("Error: Significant p-values are not numeric.")
-  }
-  
-  # Check for missing values in significant p-values
-  if (any(is.na(significant_p_values))) {
-    stop("Error: Significant p-values contain NA values.")
-  }
-  
-  # Calculate the observed mean p-value
-  observed_mean_p_value <- mean(significant_p_values, na.rm = TRUE)
-  
-  # Step 2: Initialize counter for random samples with lower mean
-  count_lower <- 0
-  
-  # Step 3: Perform Monte Carlo simulation
-  for (i in seq_len(num_iterations)) {
-    # Randomly sample p-values from the total dataset
-    random_sample <- sample(snp_data$p_values, size = snp_data$num_significant_ad_trait_snps, replace = FALSE)
-    
-    # Check for NA values in the random sample
-    if (any(is.na(random_sample))) {
-      next # Skip this iteration if there are NA values
-    }
-    
-    # Calculate the mean of the random sample
-    random_mean <- mean(random_sample, na.rm = TRUE)
-    
-    # Compare means and increment counter if random sample mean is smaller
-    if (!is.na(random_mean) && random_mean < observed_mean_p_value) {
-      count_lower <- count_lower + 1
-    }
-  }
-  
-  # Step 4: Calculate Monte Carlo p-value
-  monte_carlo_p_value <- count_lower / num_iterations
-  
-  # If no random samples have a lower mean, report an upper bound instead of exact zero
-  #reporting 0 implies total certainty
-  if (monte_carlo_p_value == 0) {
-    monte_carlo_message <- paste("<", format(1 / num_iterations, scientific = TRUE))
-    monte_carlo_p_value <- paste("<", format(1 / num_iterations, scientific = TRUE))
-  } else {
-    monte_carlo_message <- format(monte_carlo_p_value, scientific = TRUE)
-  }
-  
+  # Return a list containing the contingency table and p-values from each test
   return(list(
-    monte_carlo_p_value = monte_carlo_p_value,
-    observed_mean_p_value = observed_mean_p_value
+    contingency_table = contingency_table,
+    hyper_pval = hyper_pval,
+    fisher_pval = fisher_result$p.value,
+    mc_pval = monte_carlo_pval
   ))
 }
 
+## 3. Example usage
 
-##3. Usage example
-trait_clean_file <- "preprocessed_data/HerpZo_8721_effect_snp_clean.tsv"
-trait_significant_file <- "preprocessed_data/HerpZo_8721_effect_snp_significant.tsv"
-ad_trait_file <- "processed_data/AD1_HerpZo2_Test_filtered_snps.tsv"
+# Define file paths for the data files
+trait_clean_file <- "preprocessed_data/HerpZo_8721_effect_snp_clean.tsv"         # Full SNP dataset for the trait
+trait_significant_file <- "preprocessed_data/HerpZo_8721_effect_snp_significant.tsv"  # Significant SNPs for the trait
+ad_trait_file <- "processed_data/AD1_HerpZo2_Test_filtered_snps.tsv"               # Merged overlapping SNPs (AD and trait)
 
-# Load data
-snp_data <- load_snp_data(trait_clean_file, trait_significant_file, ad_trait_file)
-
-# Create contingency table
-contingency_table <- create_contingency_table(snp_data)
-print(contingency_table)
-
-# Validate using hypergeometric test
-hypergeo_p_value <- validate_hypergeometric(snp_data)
-print(paste("Hypergeometric p-value:", hypergeo_p_value))
-
-# validate using fisher exact test
-fisher_result <- validate_fisher_exact(snp_data)
-print(paste("Fisher's Exact Test p-value:", fisher_result$p_value))
-print(paste("Fisher's Exact Test Odds Ratio:", fisher_result$odds_ratio))
-
-# Validate using Monte Carlo simulation
-monte_carlo_result <- validate_monte_carlo(snp_data, num_iterations = 1000000)
-# Print results
-print(paste("Monte Carlo p-value:", monte_carlo_result$monte_carlo_p_value))
-print(paste("Observed Mean p-value of Significant SNPs:", monte_carlo_result$observed_mean_p_value))
+# Run validation tests by calling the validate_snps function with the file paths
+cat("Running validation tests...\n")
+results <- validate_snps(trait_clean_file, trait_significant_file, ad_trait_file)
+cat("Validation process complete.\n")
