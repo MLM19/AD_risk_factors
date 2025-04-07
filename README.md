@@ -2,10 +2,10 @@
 ![Logo](https://eu01.edcwb.com/buscador/img/centros/logogrande/54808-a088d273bd364fc39011c52eaac0ee03.png)
 
 
-# *TFG_AD_risk_factors*: Genetic clues to AD: Uncovering Environmental Risk Factors through GWAS
+# *TFG_AD_risk_factors*: Uncovering Environmental Risk Factors through GWAS
 
 
-This project aims to identify environmental risk factors for Alzheimer’s Disease (AD) using Genome-Wide Association Study (GWAS) data. By merging and filtering GWAS summary statistics from multiple traits, we investigate genetic overlaps between AD and environmental risk factors. The analysis is performed using R and Python, and various statistical tests (e.g., Hypergeometric, Fisher's Exact, Monte Carlo simulations) validate the results.
+This project aims to identify environmental risk factors for Alzheimer’s Disease (AD) using Genome-Wide Association Study (GWAS) data. By merging and filtering GWAS summary statistics from multiple traits, we investigate genetic overlaps between AD and environmental risk factors. The analysis is performed using R and Python, and various statistical tests (e.g., Hypergeometric, Fisher's Exact, Monte Carlo simulations) to validate the results.
 
 
 ## Tech Stack
@@ -78,8 +78,10 @@ In order for the scripts to work, the following directories are needed:
   ```r
   #preprocessing_data.R
   install.packages("dplyr")
-  install.packages("tibble")
+  install.packages("R.utils")
   install.packages("data.table")
+  install.packages("qqman")
+  install.packages("ggplot2")
 
   #only_visualizing.R
   install.packages("data.table")
@@ -87,13 +89,13 @@ In order for the scripts to work, the following directories are needed:
 
   #processing_data.R
   install.packages("dplyr")
-  install.packages("R.utils")
+  install.packages("tibble")
   install.packages("data.table")
-  install.packages("qqman")
-  install.packages("ggplot2")
 
   #validating.R
   install.packages("dplyr")
+  install.packages("ggplot2")
+
 
 ## Run Locally
 
