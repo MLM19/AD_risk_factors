@@ -105,12 +105,6 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
     cat(sprintf("Observed mean p-value (K = %d): %.4g\n", K, observed_mean_p))
     cat(sprintf("Monte Carlo simulation p-value: %.4g\n", monte_carlo_p))
     
-    if (monte_carlo_p < 0.05) {
-      cat("Interpretation: Observed mean p-value is lower than expected by chance.\n\n")
-    } else {
-      cat("Interpretation: Observed mean p-value could occur by chance.\n\n")
-    }
-    
     #Plot histogram
     min_simulated_p <- min(simulated_means, na.rm = TRUE)
     
@@ -124,7 +118,7 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
       xlab("Simulated Mean P-values") +
       ylab("Frequency") +
       ggtitle(paste("Monte Carlo Simulation of Mean P-values\nfor", trait_name)) +
-      geom_vline(xintercept = observed_mean_p, color = "red", linetype = "dashed", size = 1.2) +
+      geom_vline(aes(xintercept = observed_mean_p), color = "red", linetype = "dashed", linewidth = 1.2) +
       annotate("text", 
                x = observed_mean_p, y = Inf, 
                label = sprintf("Observed: %.2e", observed_mean_p),
@@ -143,9 +137,9 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
 
 ##3.Usage
 results <- validate_snps(
-  trait_clean_file = "preprocessed_data/ASBEST_3282_effect_snp_clean.tsv",
-  trait_significant_file = "preprocessed_data/ASBEST_3282_effect_snp_significant.tsv",
-  ad_trait_file = "processed_data/AD1_ASBEST2_Test_filtered_snps.tsv",
-  trait_name = "Asbestos exposure"
+  trait_clean_file = "preprocessed_data/HSV_5524_effect_snp_clean.tsv",
+  trait_significant_file = "preprocessed_data/HSV_5524_effect_snp_significant.tsv",
+  ad_trait_file = "processed_data/AD1_HSV2_Test_filtered_snps.tsv",
+  trait_name = "Herpes Simplex infection"
 )
 
