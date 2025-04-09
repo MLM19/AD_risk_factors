@@ -3,7 +3,7 @@ library(dplyr)
 library(ggplot2)
 
 ##2. Functions
-### Function to compute N, K, k, and n with pseudocount adjustments
+### Function to compute N, K, k, and n 
 compute_snp_counts <- function(trait_clean_file, trait_significant_file, ad_trait_file) {
   cat("Loading data files...\n")
   
@@ -19,10 +19,12 @@ compute_snp_counts <- function(trait_clean_file, trait_significant_file, ad_trai
   
   ad_trait <- ad_trait[!is.na(ad_trait$p_value), ]
   
-  N <- nrow(trait_clean) + 1e-6
-  n <- max(nrow(trait_significant), 1)
-  K <- max(sum(ad_trait$p_value < 1e-5), 1)
-  k <- max(nrow(ad_trait), 1)
+  N <- nrow(trait_clean)
+  n <- nrow(trait_significant)
+  K <- nrow(ad_trait)
+  k <- sum(ad_trait$p_value < 1e-5)
+  
+  cat("Counts: K =", K, ", N =", N, ", k =", k, ", n =", n, "\n")
   
   return(list(
     N = N, K = K, k = k, n = n,
@@ -38,6 +40,7 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
   cat("Starting validation process for:", trait_name, "\n")
   
   counts <- compute_snp_counts(trait_clean_file, trait_significant_file, ad_trait_file)
+  
   with(counts, {
     shared_snps <- intersect(trait_significant$rs_id, ad_trait$final_rs_id)
     SS <- length(shared_snps)
@@ -45,8 +48,9 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
     cat("Significant Shared SNPs (SS):", SS, "\n")
     
     # --- Hypergeometric test (dhyper) ---
-    hyper_p <- dhyper(SS, K, N - K, n)
+    hyper_p <- dhyper(k, n, N - n, K)
     cat(sprintf("Hypergeometric test p-value: %.4g\n", hyper_p))
+    
     if (SS == 0) {
       cat("Interpretation: No significant SNPs shared — possible weak or no association.\n\n")
     } else if (hyper_p < 0.05) {
@@ -56,11 +60,15 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
     }
     
     # --- Fisher's Exact Test ---
-    not_shared_trait <- n - SS
-    not_shared_ad <- K - SS
-    rest <- N - K - n + SS
-    contingency_table <- matrix(c(SS, not_shared_trait, not_shared_ad, rest), nrow = 2)
-    fisher_result <- fisher.test(contingency_table + 0.25)
+    contingency_table <- matrix(c(n, N-n, k, K-k), nrow = 2)
+    print(contingency_table)
+    
+    # ---   |    trait    |   AD>trait    ---
+    #  SS   |      n      |      k        ---
+    #  NSS  |     N-n     |     K-k       ---
+    # TOTAL |      N      |      K        ---
+    
+    fisher_result <- fisher.test(contingency_table)
     cat(sprintf("Fisher's exact test p-value: %.4g\n", fisher_result$p.value))
     cat(sprintf("Fisher's exact test odds ratio: %.3f\n", fisher_result$estimate))
     print(fisher_result)
@@ -80,58 +88,55 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
     }
     
     # --- Monte Carlo simulation ---
-    if (SS == 0) {
-      cat("Skipping Monte Carlo simulation: No significant shared SNPs (SS = 0).\n")
-      observed_mean_p <- NA
-      monte_carlo_p <- NA
+    cat("Running Monte Carlo simulation...\n")
+    
+    #calculate observed_mean = mean of the merged values (the SNPs found in AD that are also found in the trait) = K
+    observed_mean_p <- mean(ad_trait$p_value[ad_trait$final_rs_id %in% shared_snps], na.rm = TRUE)
+    
+    #Simulate 1000 means from K random p-values in trait_clean (N total SNPs)
+    simulated_means <- replicate(1000, {
+      sampled <- trait_clean[sample(N, K), ]
+      mean(sampled$p_value, na.rm = TRUE)
+    })
+    
+    #Calculate empirical p-value (proportion of simulated means <= observed)
+    monte_carlo_p <- (sum(simulated_means <= observed_mean_p) + 1) / (length(simulated_means) + 1) #pseudocount correction so that p-value is never 0
+    
+    cat(sprintf("Observed mean p-value (K = %d): %.4g\n", K, observed_mean_p))
+    cat(sprintf("Monte Carlo simulation p-value: %.4g\n", monte_carlo_p))
+    
+    if (monte_carlo_p < 0.05) {
+      cat("Interpretation: Observed mean p-value is lower than expected by chance.\n\n")
     } else {
-      cat("Running Monte Carlo simulation...\n")
-      simulated_means <- replicate(1000, {
-        random_rs_ids <- sample(trait_clean$rs_id, n)
-        overlap <- trait_clean[trait_clean$rs_id %in% random_rs_ids & 
-                                 trait_clean$rs_id %in% ad_trait$final_rs_id, ]
-        if (nrow(overlap) == 0) return(NA)
-        mean(overlap$p_value, na.rm = TRUE)
-      })
-      simulated_means <- simulated_means[!is.na(simulated_means)]
-      
-      observed_mean_p <- mean(ad_trait$p_value[ad_trait$final_rs_id %in% shared_snps], na.rm = TRUE)
-      
-      cat(sprintf("Observed mean p-value: %.4g\n", observed_mean_p))
-      
-      monte_carlo_p <- sum(simulated_means <= observed_mean_p) / length(simulated_means)
-      cat(sprintf("Monte Carlo simulation p-value: %.4g\n", monte_carlo_p))
-      if (monte_carlo_p < 0.05) {
-        cat("Interpretation: Observed mean p-value is lower than expected by chance.\n\n")
-      } else {
-        cat("Interpretation: Observed mean p-value could occur by chance.\n\n")
-      }
-      
-      # --- Plot histogram ---
-      hist_plot <- ggplot(data.frame(simulated_means), aes(x = simulated_means)) +
-        geom_histogram(color = "black", fill = "#69b3a2", bins = 30) +
-        theme_minimal(base_size = 14) +
-        theme(
-          panel.background = element_rect(fill = "white"),
-          plot.background = element_rect(fill = "white")
-        ) +
-        xlab("Simulated Mean P-values") +
-        ylab("Frequency") +
-        ggtitle(paste("Monte Carlo Simulation of Mean P-values\nfor", trait_name)) +
-        geom_vline(xintercept = observed_mean_p, color = "red", linetype = "dashed", size = 1.2)
-      
-      plot_file <- paste0("images/montecarlo_", gsub(" ", "_", tolower(trait_name)), ".png")
-      ggsave(plot_file, hist_plot, width = 8, height = 6)
-      cat("Saved plot to:", plot_file, "\n")
+      cat("Interpretation: Observed mean p-value could occur by chance.\n\n")
     }
     
-    return(list(
-      SS = SS,
-      hyper_p = hyper_p,
-      fisher_p = fisher_result$p.value,
-      monte_carlo_p = monte_carlo_p,
-      observed_mean_p = observed_mean_p
-    ))
+    #Plot histogram
+    min_simulated_p <- min(simulated_means, na.rm = TRUE)
+    
+    hist_plot <- ggplot(data.frame(simulated_means), aes(x = simulated_means)) +
+      geom_histogram(color = "black", fill = "#69b3a2", bins = 30) +
+      theme_minimal(base_size = 14) +
+      theme(
+        panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white")
+      ) +
+      xlab("Simulated Mean P-values") +
+      ylab("Frequency") +
+      ggtitle(paste("Monte Carlo Simulation of Mean P-values\nfor", trait_name)) +
+      geom_vline(xintercept = observed_mean_p, color = "red", linetype = "dashed", size = 1.2) +
+      annotate("text", 
+               x = observed_mean_p, y = Inf, 
+               label = sprintf("Observed: %.2e", observed_mean_p),
+               vjust = -0.5, hjust = 0.5, color = "red", fontface = "bold", size = 4.5) +
+      annotate("text", 
+               x = min_simulated_p, y = Inf,
+               label = sprintf("Min Simulated: %.2e", min_simulated_p),
+               vjust = -2.0, hjust = 0.5, color = "black", fontface = "italic", size = 4)
+    
+    plot_file <- paste0("images/montecarlo_", gsub(" ", "_", tolower(trait_name)), ".png")
+    ggsave(plot_file, hist_plot, width = 8, height = 6)
+    cat("Saved plot to:", plot_file, "\n")
   })
 }
 
