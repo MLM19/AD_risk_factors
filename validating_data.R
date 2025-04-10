@@ -23,6 +23,7 @@ compute_snp_counts <- function(trait_clean_file, trait_significant_file, ad_trai
   n <- nrow(trait_significant)
   K <- nrow(ad_trait)
   k <- sum(ad_trait$p_value < 1e-5)
+  shared_rs_ids <- intersect(trait_significant$rs_id, ad_trait$final_rs_id)
   
   cat("Counts: K =", K, ", N =", N, ", k =", k, ", n =", n, "\n")
   
@@ -30,7 +31,8 @@ compute_snp_counts <- function(trait_clean_file, trait_significant_file, ad_trai
     N = N, K = K, k = k, n = n,
     trait_clean = trait_clean,
     trait_significant = trait_significant,
-    ad_trait = ad_trait
+    ad_trait = ad_trait,
+    shared_rs_ids = shared_rs_ids
   ))
 }
 
@@ -42,16 +44,13 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
   counts <- compute_snp_counts(trait_clean_file, trait_significant_file, ad_trait_file)
   
   with(counts, {
-    shared_snps <- intersect(trait_significant$rs_id, ad_trait$final_rs_id)
-    SS <- length(shared_snps)
-    
-    cat("Significant Shared SNPs (SS):", SS, "\n")
+    cat("Significant Shared SNPs (SS):", k, "\n")
     
     # --- Hypergeometric test (dhyper) ---
     hyper_p <- dhyper(k, n, N - n, K)
     cat(sprintf("Hypergeometric test p-value: %.4g\n", hyper_p))
     
-    if (SS == 0) {
+    if (k == 0) {
       cat("Interpretation: No significant SNPs shared — possible weak or no association.\n\n")
     } else if (hyper_p < 0.05) {
       cat("Interpretation: Enrichment in shared SNPs is significant (unlikely due to chance).\n\n")
@@ -91,7 +90,7 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
     cat("Running Monte Carlo simulation...\n")
     
     #calculate observed_mean = mean of the merged values (the SNPs found in AD that are also found in the trait) = K
-    observed_mean_p <- mean(ad_trait$p_value[ad_trait$final_rs_id %in% shared_snps], na.rm = TRUE)
+    observed_mean_p <- mean(ad_trait$p_value[ad_trait$final_rs_id %in% shared_rs_ids], na.rm = TRUE)
     
     #Simulate 1000 means from K random p-values in trait_clean (N total SNPs)
     simulated_means <- replicate(1000, {
@@ -137,9 +136,9 @@ validate_snps <- function(trait_clean_file, trait_significant_file, ad_trait_fil
 
 ##3.Usage
 results <- validate_snps(
-  trait_clean_file = "preprocessed_data/HSV_5524_effect_snp_clean.tsv",
-  trait_significant_file = "preprocessed_data/HSV_5524_effect_snp_significant.tsv",
-  ad_trait_file = "processed_data/AD1_HSV2_Test_filtered_snps.tsv",
-  trait_name = "Herpes Simplex infection"
+  trait_clean_file = "preprocessed_data/VITD_5742_effect_snp_clean.tsv",
+  trait_significant_file = "preprocessed_data/VITD_5742_effect_snp_significant.tsv",
+  ad_trait_file = "processed_data/AD1_VITD2_Test_filtered_snps.tsv",
+  trait_name = "Vitamin D deficiency"
 )
 
