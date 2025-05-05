@@ -143,10 +143,10 @@ process_SNPs <- function(sig_trait1_file, clean_trait2_file, effect_clean_trait2
 
 #Define parameters and call processing function
 process_SNPs(
-  sig_trait1_file <- "preprocessed_data/AD_7158_snp_significant.tsv",
-  clean_trait2_file <- "preprocessed_data/STROK_4723_snp_clean.tsv",
-  effect_clean_trait2_file <- "preprocessed_data/STROK_4723_effect_snp_clean.tsv",
+  sig_trait1_file <- "preprocessed_data/COR_ARTERY_2314_snp_significant.tsv",
+  clean_trait2_file <- "preprocessed_data/APNEA_7362_snp_clean.tsv",
+  effect_clean_trait2_file <- "preprocessed_data/APNEA_7362_effect_snp_clean.tsv",
   distance_threshold <- 200000,  
-  file_name <- "AD1_STROK2_Test"
+  file_name <- "COR_ARTERY1_APNEA2_Test"
 )
 
