@@ -26,7 +26,7 @@ Basic scripts (Used in the beggining to handle 1 phenotype)
 - **`validation.R`**: Constructs contingency tables for SNP validation.
 
 Optimized Scripts (For the handling of the 43 phenotypes or to perform a singular function) 
-- **validation_per_trait.R**: Automatized script to perform the validation of all the generated results for a given trait. Needed input: phenotype code and format (whether short or long)
+- **`validation_per_trait.R`**: Automatized script to perform the validation of all the generated results for a given trait. Needed input: phenotype code and format (whether short or long)
       //This format is caused by the usage of two different scripts. 
 - 
 
