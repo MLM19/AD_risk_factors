@@ -20,9 +20,16 @@ This project aims to identify environmental risk factors for Alzheimer’s Disea
 - **Significance Testing**: Evaluating SNP significance based on p-values.
 
 ### 2. Main Scripts
+Basic scripts (Used in the beggining to handle 1 phenotype)
 - **`processing_data.R`**: Automates SNP merging and filtering, producing processed GWAS datasets.
 - **`visualization.R`**: Generates plots and summary statistics for GWAS comparisons.
 - **`validation.R`**: Constructs contingency tables for SNP validation.
+
+Optimized Scripts (For the handling of the 43 phenotypes or to perform a singular function) 
+- **validation_per_trait.R**: Automatized script to perform the validation of all the generated results for a given trait. Needed input: phenotype code and format (whether short or long)
+      //This format is caused by the usage of two different scripts. 
+- 
+
 
 ### 3. Results and Outputs
 - **Merged SNP Lists**: Filtered SNPs for each trait pair.
