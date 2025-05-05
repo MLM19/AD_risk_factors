@@ -26,9 +26,11 @@ Basic scripts (Used in the beggining to handle 1 phenotype)
 - **`validation.R`**: Constructs contingency tables for SNP validation.
 
 Optimized Scripts (For the handling of the 43 phenotypes or to perform a singular function) 
+
+- **`process_large_merged.R`**: Script to manually select the pairwise combination of traits, for those combinations that have a large number of merged variants and causes complications with the usage of memory on the R session. This script searches for the significant variants of trait1 in trait2 partitioning by chromosome. Then, they are sorted and filtered for at least 200kb apart. Then all the variants are included in one list and filtered by distance again. Then variants are filtered by significance threshold (1e-5).
 - **`validation_per_trait.R`**: Automatized script to perform the validation of all the generated results for a given trait. Needed input: phenotype code and format (whether short or long)
       //This format is caused by the usage of two different scripts. 
-- 
+
 
 
 ### 3. Results and Outputs
@@ -50,7 +52,9 @@ AD_risk_factors/
 ├── only_visualizing.R    #R script for visualization 
 ├── preprocessing_data.R  #R script for data preprocessing 
 ├── processing_data.R     #R script for data processing
-└── validating_data.R     #R script for validation
+├── validating_data.R     #R script for validation
+├── process_large_merged.R #R script for data processing of pairwise combination of traits with large number of merged SNPs
+└── validation_per_trait.R #R script for validating one trait at the time
 ```
 
 ## Workflow
