@@ -74,5 +74,7 @@ p <- ggplot(coords, aes(x = Dim1, y = Dim2)) +
   )
 
 print(p + theme_bw())
+#to save the coordinates
+write.table(coords, "mds_coords.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
 # -- OPTIONAL: SAVE PLOT ------------------------------------------------
 ggsave("nmds_smacof_plot_AD.png", width = 6, height = 5, dpi = 300)
