@@ -11,10 +11,21 @@ This project aims to identify environmental risk factors for Alzheimer’s Disea
 ## Tech Stack
 
 ![R](https://img.shields.io/badge/r-%23276DC3.svg?style=for-the-badge&logo=r&logoColor=white)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) 
 
 ## Overview
-### 1. Data Processing
+
+### 1. Preprocessing GWAS data
+- 
+
 - **Preprocessing GWAS Data**: Standardizing SNP IDs, chromosome positions, and allele representations.
+
+### 2. Deciding singnificant threshold
+- **Dynamically modifiable threshold**: Compared 1e-5, 1e-6 or 1e-8 signifcant threshold for the p values on the variants for each trait. (Any threshold can be specified but those are the ones I checked)
+- **Significant variants of a selected phenotype over AD**: Select the significant variants of a phenotype of our choice, find the level of significance of those variants in the Alzheimer's disease, we perform a trimean.
+- **Plotting the significance**: Create a plot to assess which traits have more significant variants for the selected threshold. 
+
+### 1. Data Processing
 - **Merging Significant SNPs**: Identifying significant SNPs in one trait and checking their presence in another trait.
 - **Filtering by Distance**: Ensuring selected SNPs are at least 200kb apart to minimize LD bias.
 - **Significance Testing**: Evaluating SNP significance based on p-values.
@@ -45,6 +56,7 @@ AD_risk_factors/
 ├── Raw_Data/             #Placeholder for raw GWAS summary statistics (download link provided)
 ├── preprocessed_data/    #Contains preprocessed trait files (download link provided)
 ├── processed_data/       #Contains processed trait data (download link provided)
+├── testing_significance/ #Contains significanceplt.py and 3 plots based on significance analysis based on trimeans of the data
 ├── .gitattributes        #Git LFS configuration (not configurated)
 ├── .gitignore            #Git ignore configuration
 ├── LICENSE               #MIT License
@@ -65,10 +77,14 @@ Download the necessary GWAS summary statistics files from the provided Google Dr
 Run the `preprocessing_data.R` script to clean and standardize the GWAS data.
 The only_visualizing.R script generates visual outputs (e.g., Manhattan and QQ plots) to help interpret the results, but those plots can also be generated as part of the `preprocessing_data.R` script.
 
-3. Processing:
+2.1. Assessing significance: 
+Run the `significanceplt.py` script to assess a defined threshold for p value variants. 
+Must define the threshold that you want to assess, the traits that are going to be used.
+
+4. Processing:
 Execute the `processing_data.R` script to merge significant SNPs and apply distance filtering.
 
-4. Validation:
+5. Validation:
 Use the `validating_data.R` script to construct contingency tables and perform statistical tests, ensuring the observed associations are not due to random chance.
 
 ## Directory structure and data localization
@@ -106,6 +122,14 @@ In order for the scripts to work, the following directories are needed:
   #validating.R
   install.packages("dplyr")
   install.packages("ggplot2")
+  ```
+- **Python:** Some analysis and transformations are performed in Python.
+- **Dependencies:** Install and load the following libraries for Python in order to run the scripts:
+  ```python
+  #significanceplt.py
+  pip install pandas numpy matplotlib
+  
+  ```
 
 
 ## Run Locally
