@@ -107,24 +107,32 @@ In order for the scripts to work, the following directories are needed:
 - **R:** The main analysis scripts are written in R.
 - **Dependencies:** Install required of the following R packages, in order to run the scripts:
   ```r
+  #validating.R
+  install.packages("data.table")
+  install.packages("dplyr")
+  install.packages("ggplot2")
+  install.packages("qqman")
+  install.packages("R.utils")
+
   #filter_and_plot_significant_snps.R
   install.packages("dplyr")
   install.packages("data.table")
   install.packages("qqman")
 
-  #only_visualizing.R
-  install.packages("data.table")
-  install.packages("qqman")
+  #nmds_and_clustering.R
+  install.packages("smacof")
+  install.packages("ggplot2")
+  install.packages("ggrepel")
+  install.packages("mclust")
+  install.packages("dbscan")
+  install.packages("readr")
 
-  #processing_data.R
+  #pairwise_trait_processing.R
   install.packages("dplyr")
   install.packages("tibble")
   install.packages("data.table")
-
-  #validating.R
-  install.packages("dplyr")
-  install.packages("ggplot2")
   ```
+  
 - **Python:** Some analysis and transformations are performed in Python.
 - **Dependencies:** Install and load the following libraries for Python in order to run the scripts:
   ```python
