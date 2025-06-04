@@ -1,4 +1,4 @@
-# preprocessing all db + manhattan, qqplot and annotation but more fast and efficient (FIXING PROBLEMS FOUND BEFORE)
+# preprocessing all db + manhattan, qqplot but more fast and efficient (FIXING PROBLEMS FOUND BEFORE)
 
 #local setwd("C:/Users/Usuario/Downloads")
 
@@ -7,42 +7,44 @@ library(data.table) # Efficient data handling (fread, fwrite)
 library(dplyr)  # Data manipulation (mutate, filter, distinct)
 library(R.utils) # For gunzip (files ending .bgz)
 library(qqman)  # GWAS visualization (manhattan, qq)
-#library(biomaRt) # SNP annotation (useEnsembl, getBM)
 library(ggplot2) # General plotting (hist, abline, text)
 
-#2. Functions for preprocessing
+#2. Defining functions for preprocessing
 
 ##Loading and validating the data function
 load_database <- function(input_path, separator = "\t", column_names) {
-  file_name <- basename(input_path)
+  file_name <- basename(input_path) #Since the input_path can be a full path, we get the name of the file to print it later on
   
   #If file is compressed in .bgz, we decompress it first
   if (grepl("\\.bgz$", file_name)) {
     message("Detected .bgz file. Decompressing...")
-    decompressed_path <- sub("\\.bgz$", "", input_path)  # Remove .bgz extension
-    gunzip(input_path, destname = decompressed_path, overwrite = FALSE)  # Decompress
-    input_path <- decompressed_path  # Update the path to the decompressed file
+    decompressed_path <- sub("\\.bgz$", "", input_path)  #Remove .bgz extension
+    if (file.exists(decompressed_path)) { #Once the file is decompressed, changing the name is necessary since it is not reversible
+        stop("Error: The decompressed file already exists. Please rename or remove the existing file.")
+    }
+    gunzip(input_path, destname = decompressed_path, overwrite = FALSE)  #Decompress the file
+    input_path <- decompressed_path  #Update the path to the decompressed file so that the program can find the file
   }
   
-  message("Loading dataset: ", file_name)
+  message("Loading dataset: ", file_name) #tracker to know which file is being loaded
   
-  data <- fread(input_path, sep = separator, data.table = FALSE) # read the data selecting the separator (by default is tab, but can specify space or comma)
+  data <- fread(input_path, sep = separator, data.table = FALSE) #Read the data selecting the separator (by default is tab, but can specify space or comma)
   
-  missing_cols <- setdiff(column_names, colnames(data))   # check if the db has all the columns that needed (the ones given by column_names argument)
+  missing_cols <- setdiff(column_names, colnames(data))   #Check if the db has all the columns that needed (the ones given by column_names argument)
   if (length(missing_cols) > 0) {
-    stop("Missing columns in dataset: ", paste(missing_cols, collapse = ", ")) # return a message with the columns that are not found in the db if there are
+    stop("Missing columns in dataset: ", paste(missing_cols, collapse = ", ")) #DEBUG:Return a message with the columns that are not found in the db if there are
   }
   
   message("Dataset loaded successfully:)")
-  message("Dimensions of loaded database: ", paste(dim(data), collapse = " x "))   # print dimensions to check
+  message("Dimensions of loaded database: ", paste(dim(data), collapse = " x "))   #DEBUG: print dimensions to check
   return(data)
 }
 
 ##Cleaning and analysing the dataset function
 clean_and_analyze_database <- function(data) {
-  message("Cleaning and analyzing data...")
+  message("Cleaning and analyzing data...") #Marker
   
-  message("Initial columns in the data:") # marker
+  message("Initial columns in the data:") #DEBUG: print the columns before renaming
   print(colnames(data))
   
   #if beta is not a column then incorporate it by converting odds ratio into a new column
@@ -51,10 +53,10 @@ clean_and_analyze_database <- function(data) {
     data <- data %>% mutate(beta = ifelse(odds_ratio > 0, log(odds_ratio), NA))
   }
   
-  message("Checking if the conversion has introduced NA: ")
-  message("The number of NA values: ", sum(is.na(data)))
+  message("Checking if the conversion has introduced NA: ") 
+  message("The number of NA values: ", sum(is.na(data))) #DEBUG: since we already now the NA number of values, this way we can see if the transformation went right
   
-  #Convert data types
+  #Convert data types to have consistent formats 
   data <- data %>%
     mutate(
       effect_allele = toupper(effect_allele),
@@ -67,24 +69,24 @@ clean_and_analyze_database <- function(data) {
     )
   
   #Filtering out
-  data <- data %>% dplyr::select(where(~ !all(is.na(.))))  # remove the columns that only contain NA as data
-  # Remove rows with NA values of the columns we are interested
-  message("Columns after removing NA-only columns: ", paste(colnames(data), collapse = ", ")) #trials
-  data <- data %>% filter(!is.na(rs_id) & !is.na(chr) & !is.na(pos) &
+  data <- data %>% dplyr::select(where(~ !all(is.na(.))))  #Remove the columns that only contain NA as data
+  #Remove rows with NA values of the essential fields (columns )
+  message("Columns after removing NA-only columns: ", paste(colnames(data), collapse = ", ")) #DEBUG: print the columns after removing NA-only columns
+  data <- data %>% filter(!is.na(rs_id) & !is.na(chr) & !is.na(pos) &  
                             !is.na(effect_allele) & !is.na(alt_allele) &
                             !is.na(beta) & !is.na(SE) & !is.na(p_value))
   
-  data <- data %>% filter(nchar(effect_allele) == 1 & nchar(alt_allele) == 1) # Not interested in indels, only one allele must be affected
+  data <- data %>% filter(nchar(effect_allele) == 1 & nchar(alt_allele) == 1) #Filter data -> Not interested in indels, keep SNPs with single nucleotide alleles
   
-  message("Control check after filtering NA and indels: ")
+  message("Control check after filtering NA and indels: ") #DEBUG: control checks for the quality of data
   message("The number of NA values: ", sum(is.na(data)))
   message("length of the data: ", nrow(data))
   
-  transitions <- c("A,G", "G,A", "C,T", "T,C")   # Filter out transitions
+  transitions <- c("A,G", "G,A", "C,T", "T,C")   #Filter out transitions
   data <- data %>%
-    filter(paste(effect_allele, alt_allele, sep = ",") %in% transitions)   # Take the values of these two columns and check if they are on the list of transitions, then keep them if they are.
+    filter(paste(effect_allele, alt_allele, sep = ",") %in% transitions)   #Take the values of these two columns and check if they are on the list of transitions, then keep them if they are.
   
-  message("Control check after filtering out transversions: ")
+  message("Control check after filtering out transversions: ") #DEBUG: control checks for the quality of data
   message("The number of NA values: ", sum(is.na(data)))
   message("length of the data: ", nrow(data))
   
@@ -92,24 +94,24 @@ clean_and_analyze_database <- function(data) {
   message("Data cleaning and analysis complete.")
   message("Dimensions of cleaned database: ", paste(dim(data), collapse = " x "))  # State dimensions to check that the filtering is well done
   
-  #Stop if the cleaned data has no rows or columns
+  #Stop if the cleaned data has no rows or columns, no valid data
   if (dim(data)[1] == 0 || dim(data)[2] == 0) {
     stop("Error: No SNPs for which we are interested --> Stopping further processing.")
   }
-  return(data) # provide the clean data
+  return(data) #provide the clean data
 }
 
 ##Quality check function
 quality_check <- function(data) {
-  message("Performing quality check...")   # as a marker to know in which part of the process the program is
+  message("Performing quality check...")   #Marker: to know in which part of the process the program is
   
   message("Structure of the data:")
-  message(str(data))       # Check the data structure
+  message(str(data))       #DEBUG: Check the data structure
   
   message("Summary of the data:")
-  message(summary(data))    # Check some summaries, to visually check that they make sense
+  message(summary(data))    #DEBUG: Check some summaries, to visually check that they make sense
   
-  na_count <- colSums(is.na(data))    # Make sure there are no NA that can difficult the processing later on (supposed to be filtered out on the cleaning function)
+  na_count <- colSums(is.na(data))    #DEBUG: Make sure there are no NA that can difficult the processing later on (supposed to be filtered out on the cleaning function)
   if (sum(na_count) > 0) {
     message("Warning: NA values found in the following columns:")
     message(na_count[na_count > 0])
@@ -120,7 +122,7 @@ quality_check <- function(data) {
   #Perform transformations if needed
   if (!is.factor(data$chr)) {
     message("Converting 'chr' to factor...")
-    data$chr <- as.factor(data$chr)          # if the structure was not correct then transform it into the correct one for chr, pos, beta, SE and the p-value
+    data$chr <- as.factor(data$chr)          #if the structure was not correct then transform it into the correct one for chr, pos, beta, SE and the p-value
   }
   if (!is.numeric(data$pos)) {
     message("Converting 'pos' to numeric...")
@@ -139,25 +141,26 @@ quality_check <- function(data) {
     data$p_value <- as.numeric(data$p_value)
   }
   
-  message("Quality check complete.") # tracker
+  message("Quality check complete.") #tracker
   return(data)
 }
 
 ##Detect the database configuration function
 detect_database_config <- function(data) {
-  for (db_name in names(database_configs)) {   # check each of the configurations in the dictionary
-    config <- database_configs[[db_name]]      # select one configuration to start comparing (that way we have the object and can use it's key values)
-    if (all(config$columns %in% colnames(data))) {  # Check that all the columns of the selected configuration are in the column names of our data
-      message("Detected database: ", db_name)   # We have selected a configuration that works for our database
+  for (db_name in names(database_configs)) {   #check each of the configurations in the dictionary
+    config <- database_configs[[db_name]]      #select one configuration to start comparing (that way we have the object and can use it's key values)
+    if (all(config$columns %in% colnames(data))) {  #Check that all the columns of the selected configuration are in the column names of our data
+      message("Detected database: ", db_name)   #We have selected a configuration that works for our database
       return(config)
     }
   }
-  stop("No matching database structure found:(")  # There are no configurations that adapt to our database --> must add the new configuration manually
+  stop("No matching database structure found:(")  #There are no configurations that adapt to our database --> must add the new configuration manually
 }
 
 ##Dictionary for column mappings and separators -> it contains the names of the columns we are to find, the separator that db configuration has and also a list of the names of the columns to do the mapping later on
 #This allows the program to dynamically detect what configuration the database has, and adapt to processing it that way.
 database_configs <- list(
+  #Each db defines the requiered columns, the separator used in the db and a mapping the columns to standard field names
   db1 = list(columns = c("SNP", "CHR", "BP", "A1", "A2", "BETA", "SE", "P"), sep = " ",
              mapping = list(rs_id = "SNP", chr = "CHR", pos = "BP", effect_allele = "A1", alt_allele = "A2", beta = "BETA", SE = "SE", p_value = "P")),
   db2 = list(columns = c("rs_id", "chromosome", "base_pair_location", "effect_allele", "other_allele", "beta", "standard_error", "p_value"), sep = "\t",
@@ -192,7 +195,7 @@ plot_gwas_results <- function(cleandata, dataset_name, p_value_threshold = 1e-5)
     stop("Missing required columns for Manhattan plot!")
   }
   
-  # Convert chr to numeric, keeping X as 23 and Y as 24
+  #Convert chr to numeric, keeping X as 23 and Y as 24
   if (!is.numeric(cleandata$chr)) {
     message("Converting 'chr' to numeric for Manhattan plot...")
     cleandata[, chr := fifelse(chr == "X", 23,  #Using fifelse(), optimized and prevents unnecessary coercion warnings
@@ -201,22 +204,22 @@ plot_gwas_results <- function(cleandata, dataset_name, p_value_threshold = 1e-5)
     cleandata <- cleandata[!is.na(chr) & is.finite(chr)]   # Remove any remaining NA values
   }
   
-  # Ensure p_value is numeric
+  #Ensure p_value is numeric
   cleandata[, p_value := as.numeric(p_value)]
   
-  # Remove problematic p-values
+  #Remove problematic p-values: filter out invalid ones
   cleandata <- cleandata[!is.na(p_value) & p_value > 0]
   
   message("Verify the conversion of the chromosome column")
-  print(unique(cleandata$chr))
+  print(unique(cleandata$chr)) #DEBUG: print the unique values of the chromosome column to check if the conversion was done correctly
   
-  sig_threshold <- -log10(p_value_threshold)  # GWAS significance threshold (as reference to articles)
-  dir.create("Images", showWarnings = FALSE, recursive = TRUE) # Make sure that the directory exists
+  sig_threshold <- -log10(p_value_threshold)  #GWAS significance threshold chosen 
+  dir.create("Images", showWarnings = FALSE, recursive = TRUE) #Make sure that the directory exists
   manhattan_filename <- paste0("Images/", dataset_name, "_manhattan_plot.png")
-  png(manhattan_filename, width = 1200, height = 800, res = 150)  # high resolution PNG needed?
+  png(manhattan_filename, width = 1200, height = 800, res = 150)  #high resolution PNG needed
   
   message("Start the creation of the manhattan plot..")
-  # Manhattan plot
+  #Manhattan plot: to check the distribution of p-values across chromosomes
   manhattan(
     cleandata,
     chr = "chr", # modified chromosome for chr
@@ -225,16 +228,15 @@ plot_gwas_results <- function(cleandata, dataset_name, p_value_threshold = 1e-5)
     snp = "rs_id",
     logp = TRUE,
     main = paste(dataset_name, "Manhattan Plot"),
-    suggestiveline = sig_threshold,
-    genomewideline = -log10(5e-8),
+    suggestiveline = sig_threshold, #line for the chosen significance threshold (red line)
+    genomewideline = -log10(5e-8), #standard suggested line (blue line)
     col = c("black", "grey")
   )
-  #abline(h = sig_threshold, col = "red", lwd = 2, lty = 2)  # Add significance line
   
   dev.off()
   message("Saved Manhattan plot: ", manhattan_filename)
   
-  # QQ plot
+  #QQ plot: to check if the p-values follow a uniform distribution
   qq_filename <- paste0("Images/", dataset_name, "_qq_plot.png")
   png(qq_filename, width = 1200, height = 800, res = 150)
   message("Start the creation of the qq plot..")
@@ -367,6 +369,8 @@ process_gwas <- function(input_path, db_name, separator = "\t", p_value_threshol
   return(list(final_data = final_data, db_name = db_name)) # Return the final_data and db_name
 }
 
+
+#3. Example usage of the functions
 input_path <- "Raw_Data/GCST90435524.h.tsv.gz"
 db_name <- "HSV_5524"
 processed_data <- process_gwas(input_path, db_name, separator = "\t", p_value_threshold = 1e-5)
