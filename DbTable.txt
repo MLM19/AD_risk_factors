@@ -1,0 +1,14 @@
+# db_name	separator	columns	rs_id	chr	pos	effect_allele	alt_allele	beta	SE	p_value
+db1	space	SNP, CHR, BP, A1, A2, BETA, SE, P	SNP	CHR	BP	A1	A2	BETA	SE	P
+db2	tab	rs_id, chromosome, base_pair_location, effect_allele, other_allele, beta, standard_error, p_value	rs_id	chromosome	base_pair_location	effect_allele	other_allele	beta	standard_error	p_value
+db3	tab	MarkerName, CHR, POS, A1, A2, Beta, SE, Pval	MarkerName	CHR	POS	A1	A2	Beta	SE	Pval
+db4	tab	hm_rsid, hm_chrom, hm_pos, hm_other_allele, hm_effect_allele, hm_beta, standard_error, p_value	hm_rsid	hm_chrom	hm_pos	hm_effect_allele	hm_other_allele	hm_beta	standard_error	p_value
+db5	tab	rsid, chromosome, base_pair_location, effect_allele, other_allele, beta, standard_error, p_value	rsid	chromosome	base_pair_location	effect_allele	other_allele	beta	standard_error	p_value
+db6	tab	variant_id, chromosome, base_pair_location, effect_allele, other_allele, odds_ratio, standard_error, p_value	variant_id	chromosome	base_pair_location	effect_allele	other_allele	beta	standard_error	p_value
+db7	space	MarkerName, Chromosome, Position, Effect_allele, Non_Effect_allele, Beta, SE, Pvalue	MarkerName	Chromosome	Position	Effect_allele	Non_Effect_allele	Beta	SE	Pvalue
+db8	tab	Name, chromosome, base_pair_location, effect_allele, other_allele, odds_ratio, standard_error, p_value	Name	chromosome	base_pair_location	effect_allele	other_allele	beta	standard_error	p_value
+db9	tab	variant_id, chromosome, base_pair_location, effect_allele, other_allele, beta, standard_error, p_value	variant_id	chromosome	base_pair_location	effect_allele	other_allele	beta	standard_error	p_value
+db10	tab	chr, pos, ref, alt, beta_EUR, se_EUR, neglog10_pval_EUR	NA	chr	pos	ref	alt	beta_EUR	se_EUR	p_value
+db11	tab	rsid, #CHR, POS, REF, ALT, all_inv_var_meta_beta, all_inv_var_meta_sebeta, all_inv_var_meta_p	rsid	#CHR	POS	REF	ALT	all_inv_var_meta_beta	all_inv_var_meta_sebeta	all_inv_var_meta_p
+db12	tab	chromosome, base_pair_location, effect_allele, other_allele, beta, standard_error, p_value	NA	chromosome	base_pair_location	effect_allele	other_allele	beta	standard_error	p_value
+db13	tab	snpid, chr, bpos, a1, a2, mtag_beta, mtag_se, mtag_pval	snpid	chr	bpos	a1	a2	mtag_beta	mtag_se	mtag_pval
