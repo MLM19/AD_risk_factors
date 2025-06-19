@@ -128,6 +128,8 @@ AD_risk_factors/
 ├── directionalconditioning.R
 ├── 1e-7visualization.R
 ├── 1e-8visualization.R
+├── GWASPhenotypesTable_Litte.txt #needed files to use `compute_trait_concordance_matrix.R`
+├── DbTable.txt                   #needed files to use `compute_trait_concordance_matrix.R`
 ├── .gitattributes        #Git LFS configuration (not configurated)
 ├── .gitignore            #Git ignore configuration
 ├── LICENSE               #MIT License
