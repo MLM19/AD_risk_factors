@@ -5,7 +5,7 @@
 # *TFG_AD_risk_factors*: Uncovering Environmental Risk Factors through GWAS
 
 
-This project aims to identify environmental risk factors for Alzheimer’s Disease (AD) using Genome-Wide Association Study (GWAS) data. By merging and filtering GWAS summary statistics from multiple traits, we investigate genetic overlaps between AD and environmental risk factors. The analysis is performed using R and Python, and various statistical tests (e.g., Hypergeometric, Fisher's Exact, Monte Carlo simulations) to validate the results.
+This project identifies environmental risk factors for Alzheimer’s Disease (AD) by integrating GWAS summary statistics from multiple traits. We merge and standardize these datasets, apply LD‑pruning and multiple p‑value thresholds, then quantify shared genetic signals via multiscale statistical tests (Hypergeometric, Fisher’s Exact, Monte Carlo) and a custom Tukey‑trimean statistic.
 
 
 ## Tech Stack
@@ -16,54 +16,56 @@ This project aims to identify environmental risk factors for Alzheimer’s Disea
 ## Overview
 
 ### 1. Preprocessing GWAS data
-- **Cleaning data**: Ensure all the data contains the necessary columns, convert data types, filter out noise, quality check, and visualize.
-- **Configuration dictionary**: Manually add any configuration (in a different format for a database that is not already in the dictionary) to the dictionary to allow configuration. Must contain names of the columns and the name to which it should mutate, so that all the databases contain the same columns. 
-- **Filtering by threshold**: Once the clean data is obtained in this step, filtering by threshold can be done with two scripts: `preprocessing_data.R` and `filter_and_plot_significant_snps.R`
+- **Clean & Harmonize**:  Ensure uniform columns (rs_id, chr, pos, effect_allele, alt_allele, beta, SE, p_value).
+- **Configuration dictionary**: Manually add any configuration (in a different format for a database that is not already in the dictionary) to the dictionary to allow configuration. Must contain names of the columns and the name to which it should mutate, so that all the databases contain the same columns.
+- **LD‑Prune**: Retain only SNPs ≥ 200 kb apart.
+- **Filtering by threshold**: Extract SNPs at user‑defined cutoffs (p ≤ 1×10⁻⁵, 1×10⁻⁶, 1×10⁻⁸).
 - **Plot variants distribution by trait**: To visualize the data in a Manhattan plot, it must be filtered by significance. 
 
-### 2. Deciding on a significant threshold
+### 2. Significance Assessment
 - **Dynamically modifiable threshold**: Compared 1e-5, 1e-6, or 1e-8 significant threshold for the p values on the variants for each trait. (Any threshold can be specified, but those are the ones I checked)
-- **Significant variants of a selected phenotype over AD**: Select the significant variants of a phenotype of our choice, find the level of significance of those variants in Alzheimer's disease, we perform a trimean.
-- **Plotting the significance**: Create a plot to assess which traits have more significant variants for the selected threshold. 
+- **Plotting the significance**: For each trait, compute the Tukey trimean of –log₁₀(p) in AD and plot horizontal barplots.  . 
 
 ### 3. Data Processing
 - **Merging Significant SNPs**: Identifying significant SNPs in one trait and checking their presence in another trait.
 - **Filtering by Distance**: Ensuring selected SNPs are at least 200kb apart to minimize LD bias.
 - **Significance Testing**: Evaluating SNP significance based on a certain threshold for p-values.
 - **Creates matrix and control document**: Create a matrix with significant, filtered, merged hits of each pairwise combination and a control file where each step is registered; merged size, filtered size, significant hits, and then the validation results.
-- **Perform validation tests**: Perform 3 statistical tests to ensure that the obtained results are not given by random chance; Hypergeometric test, Fisher's exact test, and Montecarlo simulation.  
+- **Perform validation tests**: Perform 3 statistical tests to ensure that the obtained results are not given by random chance; Hypergeometric test, Fisher's exact test, and Montecarlo simulation.
+  
+### 4. Exploratory Analysis
+- **Significance Assessment**: For each trait, compute the Tukey trimean of –log₁₀(p) in AD and plot horizontal barplots.  
+- **Pairwise Overlap**: Build an asymmetric matrix of overlapping SNP counts for all trait pairs.
 
-### 4. Scripts
-- **`preprocessing_data.R`**: Manually modify configuration database and add those formats that are not included. Clean data by filtering and removing NA's, filtering noise out. Generates Manhattan plots and QQ plots. 
-- **`significanceplt.py`**: Manually provide: p-value threshold and list of trait's codes. Generates an image for each threshold in which the trait that contains the variants with most significance in AD are on top. Statistic for the analysis is trimean. 
-- **`filter_and_plot_significant_snps.R`**: Automated script to SNP merging and filtering, producing processed GWAS datasets, generates plots and summary statistics for GWAS comparisons. The threshold is modifiable, and traits can be skipped if re-running the script. Creates Manhattan plots to see the distribution of variants in each trait.
-- **`pairwise_trait_processing.R`**: Automated script for processing each pairwise combination of traits and evaluating the number of filtered merged significant variants. Threshold and distance are modifiable, and traits can be skipped when re-running the script. Creates a matrix of all the significant hits (`processed_data/significant_snp_matrix.tsv`) and a control document that saves the validation results(`processed_data/pairwise_validation_control.tsv`). 
-- **`fix_and_rescale_matrix.py`**: Standardize the matrix by dividing the number of significant hits found in the merged of two traits by the number of significant hits of trait1 (the number of significant SNPs found in trait1 when filtering for the threshold). In this script, I manually created the dictionary with the code name of the trait and the value. Generates another file `rescaled_significant_snp_matrix.tsv`
-- **`nmds_and_clustering.R`**: Once the matrix is re-scaled, and the distance approximation is done, then this produces the Non-metric multidimensional scaling (NMDS), which is a projection of the data that allows us to see to how similar the traits are amongst themselves. Then we perform two types of clustering: mClust and DBSCAN. 
+### 5. Statistical Validation 
+- **Enrichment Tests**: Hypergeometric, Fisher’s Exact, and Monte Carlo simulations on overlap tables.  
 
-### 3. Results and Outputs
-- **Merged SNP Lists**: Filtered SNPs for each trait pair. Can be found in the `processed_data/` directory. 
-- **Statistical Reports**: Summary tables detailing the processing results at each step. 
-- **Visual Representations**: Significance assessment plot, Manhattan plots, monte carlo simulation plots, NMDS projections, and clustering plots. 
+### 6. Dimensionality Reduction & Clustering
+- **NMDS Projection**: Convert similarity matrices into 2D for visualizing genetic similarity between traits.  
+- **Clustering**: Apply Mclust and DBSCAN to identify phenotype clusters.
+
+### 7. Custom Statistic
+- Calculate the **Tukey trimean of –log(p) products**, weighted by effect‑direction concordance, to quantify pleiotropic signal strength and direction.
+
 
 ## Overall Project structure
 ```graphql
 AD_risk_factors/
-├── Images/               #Visualizations (e.g., Manhattan and QQ plots)
 ├── Raw_Data/             #Placeholder for raw GWAS summary statistics (download link provided)
 ├── preprocessed_data/    #Contains preprocessed trait files (download link provided)
 ├── processed_data/       #Contains processed trait data (download link provided)
-├── testing_significance/ #Contains significanceplt.py and 3 plots based on significance analysis based on trimeans of the data
+├── Images/               #Visualizations (e.g., Manhattan and QQ plots)
+├── testing_significance/ #Barplots and scripts for threshold comparison
 └── significanceplt.py    #Python script for assessing significance of AD over other traits
 ├── .gitattributes        #Git LFS configuration (not configurated)
 ├── .gitignore            #Git ignore configuration
 ├── LICENSE               #MIT License
-├── README.md             #This README file 
+├── README.md             #Project overview and workflow 
 ├── preprocessing_data.R  #R script for data preprocessing 
 ├── filter_and_plot_significant_snps.R   #R script for data preprocessing but all pairwise combinations
 ├── pairwise_trait_processing.R    #R script for processing and validation of all pairwise combinations
 ├── fix_and_rescale_matrix.py #Python script reescaling the matrix
-└── nmds_and_clustering.R #R script for visualizing the data and interpreting
+└── nmds_and_clustering.R #Generates NMDS projections and applies Mclust/DBSCAN clustering
 ```
 
 ## Workflow
@@ -90,6 +92,19 @@ Must have `*_snp_significant.tsv` and `*_snp_clean.tsv` in the `preprocessing/` 
 4. Visualization:
 Run the `nmds_and_clustering.R` script to perform the NMDS projection and the clustering algorithms on the data. 
 
+## Scripts found in the project
+- **`preprocessing_data.R`**: Manually modify configuration database and add those formats that are not included. Clean data by filtering and removing NA's, filtering noise out. Generates Manhattan plots and QQ plots. 
+- **`significanceplt.py`**: Manually provide: p-value threshold and list of trait's codes. Generates an image for each threshold in which the trait that contains the variants with most significance in AD are on top. Statistic for the analysis is trimean. 
+- **`filter_and_plot_significant_snps.R`**: Automated script to SNP merging and filtering, producing processed GWAS datasets, generates plots and summary statistics for GWAS comparisons. The threshold is modifiable, and traits can be skipped if re-running the script. Creates Manhattan plots to see the distribution of variants in each trait.
+- **`pairwise_trait_processing.R`**: Automated script for processing each pairwise combination of traits and evaluating the number of filtered merged significant variants. Threshold and distance are modifiable, and traits can be skipped when re-running the script. Creates a matrix of all the significant hits (`processed_data/significant_snp_matrix.tsv`) and a control document that saves the validation results(`processed_data/pairwise_validation_control.tsv`). 
+- **`fix_and_rescale_matrix.py`**: Standardize the matrix by dividing the number of significant hits found in the merged of two traits by the number of significant hits of trait1 (the number of significant SNPs found in trait1 when filtering for the threshold). In this script, I manually created the dictionary with the code name of the trait and the value. Generates another file `rescaled_significant_snp_matrix.tsv`
+- **`nmds_and_clustering.R`**: Once the matrix is re-scaled, and the distance approximation is done, then this produces the Non-metric multidimensional scaling (NMDS), which is a projection of the data that allows us to see to how similar the traits are amongst themselves. Then we perform two types of clustering: mClust and DBSCAN. 
+
+### Results and Outputs generated
+- **Merged SNP Lists**: Filtered SNPs for each trait pair. Can be found in the `processed_data/` directory. 
+- **Statistical Reports**: Summary tables detailing the processing results at each step. 
+- **Visual Representations**: Significance assessment plot, Manhattan plots, monte carlo simulation plots, NMDS projections, and clustering plots. 
+
 ## Directory structure and data localization
 
 In order for the scripts to work, the following directories are needed:
@@ -102,35 +117,30 @@ In order for the scripts to work, the following directories are needed:
 | **Images/**           | Contains visualization plots of variant distributions for each trait. Includes one **Manhattan plot** per trait.  | This directory is a placeholder for those figures. **[Download Here](https://drive.google.com/drive/folders/1Rj-Wmyp2CZI_iRq-nX3Ykjcv3vhR8nXM?usp=drive_link)**|
 | **testing_significance/**           | Contains the script and the plots for the assessment of the p-value thresholds. | In this project, these are the values analysed as potential thresholds: 1e-5,1e-6,1e-8.|
 
-## Prerequisites
+## Run Locally -Quickstart-
 
+1. Clone the repository
+
+```bash
+  git clone https://github.com/MLM19/AD_risk_factors.git
+  cd AD_risk_factors
+```
+
+2. Download the Data
+Download the GWAS summary statistics on the traits that are going to be rearched. Place those files into the Raw_Data/ directory. 
+The data used in this reasearch can be found in the placeholder as a google drive link. 
+
+3. Install dependencies
 - **R:** The main analysis scripts are written in R.
 - **Dependencies:** Install required of the following R packages, in order to run the scripts:
-  ```r
+  ```R
   #validating.R
-  install.packages("data.table")
-  install.packages("dplyr")
-  install.packages("ggplot2")
-  install.packages("qqman")
-  install.packages("R.utils")
-
-  #filter_and_plot_significant_snps.R
-  install.packages("dplyr")
-  install.packages("data.table")
-  install.packages("qqman")
-
-  #nmds_and_clustering.R
-  install.packages("smacof")
-  install.packages("ggplot2")
-  install.packages("ggrepel")
-  install.packages("mclust")
-  install.packages("dbscan")
-  install.packages("readr")
-
-  #pairwise_trait_processing.R
-  install.packages("dplyr")
-  install.packages("tibble")
-  install.packages("data.table")
+  install.packages(c(
+  "data.table","dplyr","ggplot2","qqman",
+  "smacof","mclust","dbscan","R.utils",
+  "ggrepel", "tibble"
+  ))
+  
   ```
   
 - **Python:** Some analysis and transformations are performed in Python.
@@ -144,40 +154,27 @@ In order for the scripts to work, the following directories are needed:
   
   ```
 
+4. Run the scripts
+- Preprocessing:
+  ```R
+  source("preprocessing_data.R")
+  ```
+- Assess significance
+  ```bash
+  
+  ```
+- Generate overlap matrix and validation
+- Visualize and cluster
 
-## Run Locally
-
-1. Clone the project
-
-```bash
-  git clone https://github.com/MLM19/AD_risk_factors.git
-```
-
-2. Go to the project directory
-
-```bash
-  cd AD_risk_factors
-```
-
-3. Download the Data
-Download the GWAS summary statistics on the traits that are going to be rearched. Place those files into the Raw_Data/ directory. 
-The data used in this reasearch can be found in the placeholder as a google drive link. 
-
-4. Install dependencies
-(See the prerequisites section) For R scripts, install necessary packages.
-
-5. Run the scripts
-From the main directory of the project run the scripts.
-The script are prepared to work with the given directories however they can be adjusted by changing the paths of the data in the scripts.
-To run the R scripts, you can write `source(name_of_the_script.R)`.
-
-## Authors
+## Author
 
 - [@MLM19](https://www.github.com/MLM19)
 
 ## Notes
 - GWAS data uses **GRCh38** as the reference genome.
 - Any compatible GWAS summary statistics can be used with this project, provided the format matches the configurations or is added manually into the configuration section of the `preprocessing_data.R`.
+
+  
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
